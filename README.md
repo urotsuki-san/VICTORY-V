@@ -5,7 +5,7 @@
 ### Verified, Isolated, Capability-safe, Timing-conscious, Outcome-explicit, Rollback-safe, Yield-bounded
 
 Experimental 32-bit ISA, executable reference model, and pre-FPGA soft-core prototype.
-
+<img src="docs/assets/readme/VICTORY-V-hero-v1.png" alt="AperiSyVra" width="100%">
 <p>
   <a href="https://github.com/urotsuki-san/VICTORY-V/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/urotsuki-san/VICTORY-V/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Status pre-FPGA alpha" src="https://img.shields.io/badge/status-pre--FPGA%20alpha-7c3aed?style=for-the-badge">
