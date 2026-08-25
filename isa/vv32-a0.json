@@ -1,0 +1,381 @@
+{
+  "name": "VICTORY-V VV32-A0",
+  "version": "0.1.0-alpha.0",
+  "word_bits": 32,
+  "byte_order": "little",
+  "registers": 32,
+  "formats": {
+    "NONE": 0,
+    "R": 1,
+    "I": 2,
+    "B": 3,
+    "J": 4,
+    "VTRY": 5
+  },
+  "opcodes": {
+    "NOP": {
+      "value": 0,
+      "mnemonic": "nop",
+      "format": "NONE",
+      "description": "No operation"
+    },
+    "MOV": {
+      "value": 1,
+      "mnemonic": "mov",
+      "format": "R",
+      "description": "Copy value and metadata"
+    },
+    "MOVI": {
+      "value": 2,
+      "mnemonic": "movi",
+      "format": "I",
+      "description": "Sign-extended 16-bit immediate"
+    },
+    "LUI": {
+      "value": 3,
+      "mnemonic": "lui",
+      "format": "I",
+      "description": "Load immediate into upper half"
+    },
+    "ADD": {
+      "value": 4,
+      "mnemonic": "add",
+      "format": "R",
+      "description": "32-bit addition"
+    },
+    "ADDI": {
+      "value": 5,
+      "mnemonic": "addi",
+      "format": "I",
+      "description": "32-bit addition with immediate"
+    },
+    "SUB": {
+      "value": 6,
+      "mnemonic": "sub",
+      "format": "R",
+      "description": "32-bit subtraction"
+    },
+    "MUL": {
+      "value": 7,
+      "mnemonic": "mul",
+      "format": "R",
+      "description": "Low 32 bits of multiplication"
+    },
+    "AND": {
+      "value": 8,
+      "mnemonic": "and",
+      "format": "R",
+      "description": "Bitwise AND"
+    },
+    "ANDI": {
+      "value": 9,
+      "mnemonic": "andi",
+      "format": "I",
+      "description": "Bitwise AND immediate"
+    },
+    "OR": {
+      "value": 10,
+      "mnemonic": "or",
+      "format": "R",
+      "description": "Bitwise OR"
+    },
+    "ORI": {
+      "value": 11,
+      "mnemonic": "ori",
+      "format": "I",
+      "description": "Bitwise OR immediate"
+    },
+    "XOR": {
+      "value": 12,
+      "mnemonic": "xor",
+      "format": "R",
+      "description": "Bitwise XOR"
+    },
+    "XORI": {
+      "value": 13,
+      "mnemonic": "xori",
+      "format": "I",
+      "description": "Bitwise XOR immediate"
+    },
+    "SHL": {
+      "value": 14,
+      "mnemonic": "shl",
+      "format": "R",
+      "description": "Logical left shift"
+    },
+    "SHR": {
+      "value": 15,
+      "mnemonic": "shr",
+      "format": "R",
+      "description": "Logical right shift"
+    },
+    "SAR": {
+      "value": 16,
+      "mnemonic": "sar",
+      "format": "R",
+      "description": "Arithmetic right shift"
+    },
+    "CMPEQ": {
+      "value": 17,
+      "mnemonic": "cmpeq",
+      "format": "R",
+      "description": "Equality comparison"
+    },
+    "CMPLT": {
+      "value": 18,
+      "mnemonic": "cmplt",
+      "format": "R",
+      "description": "Signed less-than comparison"
+    },
+    "CMPULT": {
+      "value": 19,
+      "mnemonic": "cmpult",
+      "format": "R",
+      "description": "Unsigned less-than comparison"
+    },
+    "BRZ": {
+      "value": 20,
+      "mnemonic": "brz",
+      "format": "B",
+      "description": "Branch when register is zero"
+    },
+    "BRNZ": {
+      "value": 21,
+      "mnemonic": "brnz",
+      "format": "B",
+      "description": "Branch when register is non-zero"
+    },
+    "JAL": {
+      "value": 22,
+      "mnemonic": "jal",
+      "format": "J",
+      "description": "PC-relative jump and link"
+    },
+    "JALR": {
+      "value": 23,
+      "mnemonic": "jalr",
+      "format": "I",
+      "description": "Register-indirect jump and link"
+    },
+    "HALT": {
+      "value": 24,
+      "mnemonic": "halt",
+      "format": "NONE",
+      "description": "Stop execution"
+    },
+    "TRAP": {
+      "value": 25,
+      "mnemonic": "trap",
+      "format": "I",
+      "description": "Raise an explicit trap"
+    },
+    "CSRR": {
+      "value": 26,
+      "mnemonic": "csrr",
+      "format": "I",
+      "description": "Read a control/status register"
+    },
+    "CSRW": {
+      "value": 27,
+      "mnemonic": "csrw",
+      "format": "I",
+      "description": "Write a control/status register"
+    },
+    "EI": {
+      "value": 28,
+      "mnemonic": "ei",
+      "format": "NONE",
+      "description": "Enable external interrupts"
+    },
+    "DI": {
+      "value": 29,
+      "mnemonic": "di",
+      "format": "NONE",
+      "description": "Disable external interrupts"
+    },
+    "VRET": {
+      "value": 30,
+      "mnemonic": "vret",
+      "format": "NONE",
+      "description": "Return from trap"
+    },
+    "CROOT": {
+      "value": 32,
+      "mnemonic": "croot",
+      "format": "R",
+      "description": "Create a root capability before VLOCK"
+    },
+    "CBOUNDS": {
+      "value": 33,
+      "mnemonic": "cbounds",
+      "format": "R",
+      "description": "Narrow capability bounds"
+    },
+    "CPERM": {
+      "value": 34,
+      "mnemonic": "cperm",
+      "format": "R",
+      "description": "Narrow capability permissions"
+    },
+    "CINC": {
+      "value": 35,
+      "mnemonic": "cinc",
+      "format": "R",
+      "description": "Move a capability cursor"
+    },
+    "CGETTAG": {
+      "value": 36,
+      "mnemonic": "cgettag",
+      "format": "R",
+      "description": "Read capability validity"
+    },
+    "CGETPERM": {
+      "value": 37,
+      "mnemonic": "cgetperm",
+      "format": "R",
+      "description": "Read capability permissions"
+    },
+    "CLDB": {
+      "value": 38,
+      "mnemonic": "cldb",
+      "format": "I",
+      "description": "Capability byte load, signed"
+    },
+    "CLDBU": {
+      "value": 39,
+      "mnemonic": "cldbu",
+      "format": "I",
+      "description": "Capability byte load, unsigned"
+    },
+    "CLDH": {
+      "value": 40,
+      "mnemonic": "cldh",
+      "format": "I",
+      "description": "Capability halfword load, signed"
+    },
+    "CLDHU": {
+      "value": 41,
+      "mnemonic": "cldhu",
+      "format": "I",
+      "description": "Capability halfword load, unsigned"
+    },
+    "CLDW": {
+      "value": 42,
+      "mnemonic": "cldw",
+      "format": "I",
+      "description": "Capability word load"
+    },
+    "CSTB": {
+      "value": 43,
+      "mnemonic": "cstb",
+      "format": "I",
+      "description": "Capability byte store"
+    },
+    "CSTH": {
+      "value": 44,
+      "mnemonic": "csth",
+      "format": "I",
+      "description": "Capability halfword store"
+    },
+    "CSTW": {
+      "value": 45,
+      "mnemonic": "cstw",
+      "format": "I",
+      "description": "Capability word store"
+    },
+    "VDECLASS": {
+      "value": 46,
+      "mnemonic": "vdeclass",
+      "format": "R",
+      "description": "Explicit declassification with authority"
+    },
+    "VLOCK": {
+      "value": 47,
+      "mnemonic": "vlock",
+      "format": "NONE",
+      "description": "Irreversibly lock root creation until reset"
+    },
+    "VTRY": {
+      "value": 48,
+      "mnemonic": "vtry",
+      "format": "VTRY",
+      "description": "Start a bounded atomic Victory Region"
+    },
+    "VCHK": {
+      "value": 49,
+      "mnemonic": "vchk",
+      "format": "I",
+      "description": "Abort region when condition is false"
+    },
+    "VIC": {
+      "value": 50,
+      "mnemonic": "vic",
+      "format": "NONE",
+      "description": "Victory Integrity Commit"
+    },
+    "VABT": {
+      "value": 51,
+      "mnemonic": "vabt",
+      "format": "I",
+      "description": "Explicitly abort a Victory Region"
+    },
+    "VERR": {
+      "value": 52,
+      "mnemonic": "verr",
+      "format": "R",
+      "description": "Read the last Victory error"
+    },
+    "WFI": {
+      "value": 53,
+      "mnemonic": "wfi",
+      "format": "NONE",
+      "description": "Wait for interrupt"
+    }
+  },
+  "capability_permissions": {
+    "READ": 1,
+    "WRITE": 2,
+    "EXECUTE": 4,
+    "SECRET": 8,
+    "DECLASSIFY": 16
+  },
+  "csrs": {
+    "VSTATUS": 0,
+    "VTVEC": 1,
+    "VEPC": 2,
+    "VCAUSE": 3,
+    "VBADADDR": 4,
+    "VCYCLE": 5,
+    "VINSTRET": 6,
+    "VERROR": 7,
+    "VREGION_COUNT": 8,
+    "VREGION_LIMIT": 9
+  },
+  "causes": {
+    "NONE": 0,
+    "ILLEGAL_INSTRUCTION": 1,
+    "INSTRUCTION_ALIGNMENT": 2,
+    "CAPABILITY_TAG": 3,
+    "CAPABILITY_BOUNDS": 4,
+    "CAPABILITY_PERMISSION": 5,
+    "SECRET_FLOW": 6,
+    "ROOT_LOCKED": 7,
+    "REGION_NESTED": 8,
+    "REGION_STORE_QUOTA": 9,
+    "REGION_BUDGET": 10,
+    "EXPLICIT_TRAP": 11,
+    "DECLASSIFY_DENIED": 12,
+    "INTERRUPT": 13,
+    "DATA_ALIGNMENT": 14,
+    "MEMORY_RANGE": 15,
+    "REGION_REQUIRED": 16
+  },
+  "architectural_invariants": [
+    "r0 is always zero and never carries capability or secret metadata",
+    "integer-producing instructions clear the destination capability tag",
+    "all data-memory accesses require a valid capability",
+    "secret-tagged values cannot control branches or addresses",
+    "stores inside a Victory Region are invisible until VIC",
+    "VLOCK disables CROOT until reset"
+  ]
+}

@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: victory-v-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  model:
+    name: Model (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install editable package
+        run: python -m pip install -e . --no-build-isolation
+      - name: Compile Python sources
+        run: python -m compileall -q src tests tools
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Verify ISA declarations
+        run: python tools/check_isa_sync.py
+      - name: Assemble and run examples
+        shell: bash
+        run: |
+          mkdir -p build
+          python -m victory_v.cli asm examples/victory.vs -o build/victory.vbin --listing build/victory.lst
+          python -m victory_v.cli run examples/victory.vs
+          python -m victory_v.cli run examples/rollback.vs
+          python -m victory_v.cli run examples/capability_fault.vs
+          python -m victory_v.cli run examples/secret_flow.vs
+      - name: Check installed dependencies
+        run: python -m pip check
+
+  rtl:
+    name: RTL simulation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus Verilog
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+      - name: Compile and run self-checking testbench
+        run: make rtl-test

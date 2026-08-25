@@ -1,0 +1,16 @@
+[options]
+mode prove
+depth 40
+multiclock on
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal -sv rtl/vv32_pkg.sv rtl/vv32_core.sv formal/vv32_core_formal.sv
+prep -top vv32_core_formal
+
+[files]
+rtl/vv32_pkg.sv
+rtl/vv32_core.sv
+formal/vv32_core_formal.sv
