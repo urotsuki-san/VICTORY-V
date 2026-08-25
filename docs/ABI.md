@@ -1,45 +1,39 @@
-# Provisional VV32-A0 ABI
+# ABI Notes
 
-This ABI is a planning contract for hand-written assembly and the future compiler port. It is not yet backed by a C compiler and may change before the first stable profile.
+## VV32-A0
 
-## Register convention
+The current ABI is a convention for hand-written assembly and the future compiler port. It is not yet backed by C.
 
 | Registers | Role | Preservation |
 |---|---|---|
-| `r0` | constant zero | fixed |
-| `r1`–`r4` | arguments; `r1`–`r2` return values | caller-saved |
+| `r0` | zero | fixed |
+| `r1`–`r4` | arguments; `r1`–`r2` results | caller-saved |
 | `r5`–`r12` | temporaries | caller-saved |
 | `r13`–`r20` | saved values | callee-saved |
-| `r21`–`r28` | additional temporaries / platform use | caller-saved for A0 |
+| `r21`–`r28` | temporaries / platform use | caller-saved in A0 |
 | `r29` / `c29` | stack cursor capability | callee-owned |
 | `r30` / `c30` | optional frame capability | callee-saved |
 | `r31` | link register | caller-saved |
 
-A callee that preserves a capability register must preserve its value, bounds, permissions, valid tag, and secret tag. Ordinary integer stores cannot do this in A0, so a general compiler/RTOS context ABI remains blocked until tagged capability save/restore is specified.
+A saved capability includes value, bounds, permissions, validity, and secret state. A0 integer stores cannot preserve that metadata, so a general task switch remains unsupported.
 
-## Stack
+The stack grows down and is 16-byte aligned at a public call boundary. `c29` carries `R|W` permission and bounds for the active stack object. A failed Victory Region does not restore the stack pointer; its failure target repairs ordinary register state as needed.
 
-- stack grows toward lower addresses;
-- stack pointer is 16-byte aligned at a public call boundary;
-- `c29` must carry `R|W` permission and bounds for the active stack object;
-- return addresses stay in `r31` unless software explicitly stores them as integers;
-- an A0 function must not assume that a failed Victory Region restores stack-pointer registers.
+Trap entry records `VEPC`, `VCAUSE`, and `VBADADDR`, disables interrupts, and transfers to `VTVEC`. `VRET` returns.
 
-## Calls
+## VV64-A0 draft
 
-```asm
-    call function
-    ; r31 receives the following PC
+The provisional 64-bit ABI name is `VLP64`:
 
-function:
-    ; body
-    ret
-```
+- `long`, pointers, and integer registers are 64 bits;
+- pointer values carry hidden capability metadata;
+- ordinary integer stores do not preserve a pointer capability;
+- `CLDC` and `CSTC` save and restore tagged pointer state;
+- context, signal, and debugger frames have explicit metadata layouts;
+- sealed calls and protected return tokens replace integer-only cross-domain returns.
 
-Indirect calls use `JALR`. A0 does not yet implement executable capabilities or landing-pad enforcement, so control-flow integrity is not claimed.
+The register convention should stay close to VV32 unless compiler measurements show a clear reason to change it. Keeping argument, saved, stack, frame, and link roles aligned reduces duplicated assembly and keeps the lineage visible.
 
-## Trap entry
+`VV64-L0/flat` uses FDPIC or FLAT-style loading. Code, data, and stack may have independent capabilities even when their physical segments are not contiguous. `VV64-L0/paged` keeps the same register and capability rules while adding virtual mappings.
 
-Hardware records `VEPC`, `VCAUSE`, and `VBADADDR`, disables external interrupts, and transfers to `VTVEC`. A handler returns with `VRET`.
-
-The complete trap-frame layout is deferred until capability metadata has an architectural save format.
+The ABI is not frozen until a compiler can build non-trivial C, save a tagged context, and pass the same tests in the model and RTL.

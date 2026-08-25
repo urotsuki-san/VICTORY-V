@@ -1,67 +1,41 @@
 # Threat Model
 
-## Status
+## Scope
 
-This is a design threat model for a research alpha. It documents intended boundaries; it is not evidence that the implementation meets them.
+The implemented subject is `VV32-A0`. `VV64-A0`, its Capability Directory, and both Linux profiles are design targets. This file separates intended rules from evidence already present in the repository.
 
-## Assets
+## Protected state
 
 VICTORY-V is intended to protect:
 
-- memory objects reachable only through bounded capabilities;
-- secret-derived register values from obvious control-flow and address-flow leakage;
-- data-memory state from partial writes when a bounded operation fails;
-- root authority after boot-time capability construction is locked;
-- interrupt responsiveness from unbounded software regions.
+- memory objects reached through bounded capabilities;
+- root authority after `VLOCK`;
+- secret-tagged values from direct branch and address flow;
+- memory from partial Victory Region updates;
+- future tagged context state;
+- domain boundaries in flat and paged VV64 systems.
 
-## Attacker model
+## Software attacker
 
-A0 considers untrusted or defective software that can execute arbitrary VV32-A0 instructions after initial boot setup but cannot:
+For A0, assume untrusted or defective software can execute arbitrary legal instructions after boot setup. It cannot directly edit hidden metadata, bypass the core's memory interface, replace the bitstream, or physically probe the FPGA.
 
-- physically probe or modify the FPGA;
-- replace the bitstream, clock, or reset network;
-- directly modify capability metadata outside the defined ISA;
-- bypass the core's data-memory interface;
-- violate electrical timing or inject faults.
+It may try to forge a capability, exceed bounds, leak a secret, create a root after `VLOCK`, exhaust a region, leave a partial update, reuse a stale VV64 generation, use page tables to add authority, or corrupt a call/return target.
 
-The attacker may attempt out-of-bounds access, permission escalation, capability forgery through integer arithmetic, secret-dependent branches, secret-dependent pointers, nested regions, quota exhaustion, and failure during a multi-write update.
+## Required behavior
 
-## Intended protections
+- Integer operations clear capability validity.
+- Derived capabilities do not widen authority.
+- A secret controlling a branch, target, address, or public store fails.
+- Region stores remain hidden until `VIC`; abort discards them and reports a cause.
+- `VLOCK` is monotonic until reset.
+- VV64 context memory preserves tags instead of encoding authority as ordinary bytes.
+- VV64 page permissions are intersected with capability and domain rights.
+- A flat VV64 process cannot gain another domain by guessing a physical address.
 
-### Capability integrity
+## Not covered yet
 
-Integer operations clear capability validity. Derived capability operations may narrow authority but must not expand it. All A0 data access is capability mediated.
+The repository does not establish protection against physical or environmental side channels; malicious synthesis, programming, or debug tools; probing, readback, glitching, radiation, or fault injection; ordinary MMIO rollback; bypass DMA; power loss during commit; denial of service; bugs holding legitimate broad authority; complete temporal safety; future speculative leakage; multicore races; or cryptographic correctness merely because a tag exists.
 
-### Secret-flow restrictions
+## Claims
 
-The core rejects secret-tagged branch conditions and addresses. A secret store requires a secret destination capability. Explicit declassification requires `D` authority.
-
-### Failure containment
-
-Victory Region stores are held internally until `VIC`. Documented aborts discard them and transfer to a fixed failure path.
-
-### Root lock
-
-After `VLOCK`, `CROOT` cannot create new root authority until reset.
-
-## Explicit non-goals and unresolved risks
-
-A0 does **not** currently claim protection against:
-
-- power, electromagnetic, acoustic, thermal, or timing side channels;
-- malicious or compromised synthesis/place-and-route tools;
-- FPGA configuration readback, physical probing, voltage/clock glitching, radiation, or fault injection;
-- rollback of MMIO or external devices;
-- DMA masters that bypass the VICTORY-V capability checks;
-- speculative execution in a future implementation that departs from the A0 core;
-- control-flow integrity for indirect calls and returns;
-- capability persistence or secure task switching;
-- multi-core races or memory consistency beyond one core;
-- power loss during a commit;
-- denial of service;
-- bugs in software that holds legitimate broad authority;
-- cryptographic correctness merely because secret tags are present.
-
-## Security claims policy
-
-The repository may accurately say that a covered test demonstrates a specific modeled behavior. It may not claim broad memory safety, constant-time execution, real-time guarantees, or superiority over another ISA without reproducible measurements and independent review.
+A unit test supports a narrow statement about the case it covers. It does not establish complete memory safety, constant-time execution, hard real-time behavior, Linux readiness, or superiority over another ISA. Broader claims need reproducible model, RTL, and FPGA evidence and independent review.

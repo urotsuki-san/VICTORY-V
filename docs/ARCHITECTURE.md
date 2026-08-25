@@ -1,52 +1,43 @@
 # VV32-A0 Architecture
 
-## 1. Status and scope
+## Status
 
-`VV32-A0` is the first executable VICTORY-V architecture contract. It is intentionally small enough to implement as a board-independent FPGA soft core and strict enough to test the ideas that distinguish the project.
+`VV32-A0` is the first executable VICTORY-V architecture and the source of the family. It is small enough for a low-cost FPGA and remains a standalone target after `VV64-A0` begins.
 
-A0 is not a stable production ISA. Instruction encodings are fixed for this alpha release, but incompatible changes remain possible before the first stable profile.
+A0 is an alpha contract. Opcode positions are fixed for this release, but incompatible changes remain possible before a stable profile.
 
-The normative sources are:
+When sources disagree, use this order:
 
 1. this document and [`ISA.md`](ISA.md);
 2. [`isa/vv32-a0.json`](../isa/vv32-a0.json);
-3. the Python executable model for operational edge cases;
-4. the RTL only after a behavior is covered by a differential or conformance test.
+3. the Python model for covered operational details;
+4. RTL where a differential or conformance test checks the behavior.
 
-When these disagree, the discrepancy is a defect. No implementation may silently redefine the architecture.
+A mismatch is a defect. An implementation does not redefine the ISA silently.
 
-## 2. Design objective
+The family relationship is documented in [`ARCHITECTURE_FAMILY.md`](ARCHITECTURE_FAMILY.md).
 
-VICTORY-V does not attempt to cover servers, desktops, Linux application processors, or every embedded workload. A0 tests a narrower architecture:
+## Machine
 
-- every data-memory access is capability checked;
-- secret-derived values cannot choose a branch or address;
-- a bounded region can stage memory writes and either commit or discard them;
-- interrupt deferral is bounded by an encoded instruction budget;
-- execution is in order and non-speculative;
-- success is explicit rather than inferred from a lack of exceptions.
-
-## 3. Base machine
-
-| Property | VV32-A0 |
+| Property | `VV32-A0` |
 |---|---|
-| Instruction width | fixed 32 bit |
+| Instruction width | fixed 32 bits |
 | Byte order | little-endian |
-| Program counter | 32 bit, four-byte aligned |
-| Integer registers | 32 × 32 bit |
-| Capability metadata | valid, base, exclusive top, five permission bits per register |
-| Secret metadata | one secret bit per register |
-| Data-address width | 32 bit |
+| Program counter | 32 bits, four-byte aligned |
+| Registers | 32 × 32 bits |
+| Data address width | 32 bits |
+| Register metadata | capability state and one secret bit |
 | Execution | single-issue, in order, multi-cycle |
-| Speculation | none in the A0 RTL |
+| Speculation | none |
 | Memory consistency | one core, program order |
+| Translation | none |
 | Nested Victory Regions | prohibited |
 
-The instruction and data interfaces are separate in the prototype RTL. This is an implementation choice for the first FPGA target, not a requirement that future profiles remain Harvard-only.
+The prototype has separate instruction and data interfaces. That is a property of the first core, not a permanent family rule.
 
-## 4. Register state
+## Register state
 
-Each architectural register has three associated components:
+Each register contains:
 
 ```text
 value[31:0]
@@ -54,186 +45,99 @@ capability { valid, base[31:0], top[31:0], permissions[4:0] }
 secret
 ```
 
-Assembly names `rN`, `vN`, `cN`, and `sN` refer to the same numbered register. The prefix communicates intent; it does not select another physical bank.
+`rN`, `vN`, `cN`, and `sN` name the same physical state. The prefix only states intent.
 
-### 4.1 Zero register
+`r0` is always zero, untagged, and public. Writes to it are discarded.
 
-`r0` is always zero. Its capability is always invalid and its secret bit is always clear. Writes to it are discarded.
+### Metadata propagation
 
-### 4.2 Metadata propagation
+- `MOV` copies value, capability, and secret state.
+- Integer-producing instructions clear the destination capability.
+- Arithmetic and comparisons propagate secret state from their operands.
+- Capability-producing instructions clear the destination secret bit.
+- A load through an `S` capability marks the result secret.
+- `VDECLASS` is the only A0 instruction that clears a secret tag while preserving a value.
 
-- `MOV` copies value, capability metadata, and secret metadata.
-- integer-producing instructions clear the destination capability tag;
-- arithmetic and comparisons propagate secret metadata from their operands;
-- capability-producing instructions clear the destination secret bit;
-- loads through a `SECRET` capability mark the result secret;
-- `VDECLASS` is the only A0 instruction that intentionally clears a secret tag while preserving a value.
+A0 cannot yet spill a capability to memory. Ordinary stores lose authority metadata. This is acceptable for the first bare-metal core and blocks a general task-switch ABI. `VV64-A0` addresses it with tagged context memory; a later VV32 profile may adopt the same mechanism without silently changing A0.
 
-A0 does not yet provide capability load/store instructions. Capabilities therefore cannot be spilled to ordinary memory without losing authority metadata. This is acceptable for the bare-metal FPGA milestone but is a blocker for a complete multitasking ABI and is tracked in the roadmap.
+## Capabilities
 
-## 5. Capability model
-
-A capability is valid only when its tag bit is set. Its range is:
+A valid capability has a tagged cursor and an interval:
 
 ```text
 base <= cursor < top
 ```
 
-The cursor is the ordinary register value. `top` is exclusive. A cursor may temporarily equal `top` as a one-past pointer, but an access at that cursor fails.
-
-### 5.1 Permissions
+`top` is exclusive. A one-past cursor may exist but cannot be dereferenced.
 
 | Bit | Name | Meaning |
 |---:|---|---|
-| `0x01` | `R` | data read |
-| `0x02` | `W` | data write |
-| `0x04` | `X` | reserved for executable capabilities |
-| `0x08` | `S` | memory reached through this capability is secret |
-| `0x10` | `D` | authority to execute `VDECLASS` |
+| `0x01` | `R` | read data |
+| `0x02` | `W` | write data |
+| `0x04` | `X` | reserved executable authority |
+| `0x08` | `S` | data reached through the capability is secret |
+| `0x10` | `D` | may execute `VDECLASS` |
 
-`X` is reserved in A0. Instruction fetch is not capability mediated yet.
+Instruction fetch is not capability-checked in A0, so `X` remains reserved.
 
-### 5.2 Authority creation and reduction
+`CROOT` creates an initial capability before `VLOCK`. After `VLOCK`, root creation fails until reset. There is no CSR to reopen it.
 
-`CROOT` creates a root capability from an integer base, integer length, and immediate permission mask. It is available only before `VLOCK`.
+Derived operations only reduce authority:
 
-`VLOCK` is monotonic until reset. After it executes, all later `CROOT` instructions fail with `ROOT_LOCKED`. No CSR can clear the lock.
+- `CBOUNDS` chooses a subrange;
+- `CPERM` intersects permissions with a mask;
+- `CINC` moves the cursor without changing bounds or rights.
 
-Derived capabilities can only reduce authority:
+Integer arithmetic on a tagged register clears the tag. A numeric address is not a capability.
 
-- `CBOUNDS` sets a new base at the source cursor and a new top at cursor + length; the result must remain within the source bounds;
-- `CPERM` performs a bitwise AND between the source permissions and a mask;
-- `CINC` changes the cursor but not bounds or permissions.
+Every `CLD*` and `CST*` checks tag, permission, bounds, physical range, alignment, and secret-store policy. A0 has no unchecked data load or store.
 
-Integer arithmetic on a capability register clears its capability tag. This prevents ordinary arithmetic from forging a tagged pointer.
+## Secret flow
 
-### 5.3 Access checks
+The secret bit catches direct control-flow and address-flow mistakes. It is not a complete side-channel proof.
 
-Every `CLD*` and `CST*` operation checks, in effect:
+A secret controlling value causes `SECRET_FLOW` for branches, indirect targets, capability changes, memory addresses, `VCHK`, CSR writes, and public stores. Secret arithmetic is allowed and keeps the tag.
 
-1. the capability register itself is not secret-tagged;
-2. its capability tag is valid;
-3. the required `R` or `W` permission is present;
-4. effective address and access end remain inside `[base, top)`;
-5. the physical A0 data-memory range contains the access;
-6. halfword and word natural alignment holds;
-7. a secret source is not stored through a non-secret capability.
+`VDECLASS rd, rs, cAuth` requires a valid capability with `D`. It records authority to release a value; it does not prove that the release is wise.
 
-There are no raw A0 data load/store instructions that bypass these checks.
+## Victory Regions
 
-## 6. Secret-flow rules
-
-The A0 secret tag is a small dynamic information-flow mechanism. It is intended to reject obvious secret-dependent control flow and addressing, not to prove complete side-channel resistance.
-
-The following operations fail with `SECRET_FLOW` when their controlling input is secret:
-
-- `BRZ` and `BRNZ` condition registers;
-- `JALR` target registers;
-- capability cursor changes using a secret offset;
-- capability bounds or permission changes using secret operands;
-- memory addressing through a secret-tagged capability register;
-- `VCHK` on a secret condition;
-- CSR writes sourced from a secret value;
-- stores of secret data to a capability without `S`.
-
-Arithmetic on secret data is allowed and propagates the secret tag. Fixed execution timing for each arithmetic operation is an implementation goal, but A0 has not yet been measured or formally proven constant-time in FPGA fabric.
-
-### 6.1 Declassification
-
-`VDECLASS rd, rs, cAuth` succeeds only when `cAuth` is a valid capability with `D`. The destination receives the source value as a non-secret integer and no capability metadata.
-
-This is explicit authority, not an assertion that the released value is safe. Software remains responsible for deciding what may be revealed.
-
-## 7. Victory Regions
-
-A Victory Region begins with:
+A region begins with:
 
 ```asm
 vtry failure_target, store_quota, instruction_budget
 ```
 
-The instruction encodes:
+Stores enter a bounded buffer and are not sent to external memory. Loads see the newest overlapping buffered bytes. `VIC` emits the stores in program order and closes the region.
 
-- a PC-relative failure target;
-- a requested maximum number of stores;
-- a maximum number of instructions allowed before the region must finish.
+A false `VCHK`, explicit `VABT`, capability or secret fault, quota or budget failure, prohibited irreversible instruction, or nested `VTRY` aborts the region. Abort discards stores, records `VERROR`, scrubs secret registers, and jumps to the failure target.
 
-A0 forbids nested regions.
+Ordinary registers and non-secret capabilities are not rolled back. The failure target is a recovery boundary, not a full snapshot restore point.
 
-### 7.1 Buffered state
+A0 does not define transactional MMIO. A future SoC must reject it inside a region or use a device protocol that participates in commit.
 
-Data-memory stores inside an active region enter a bounded store buffer. They are not emitted to external data memory. Loads observe the newest buffered byte for overlapping addresses, so a region sees its own writes.
+External interrupts are deferred while a region or its commit is active. The encoded instruction budget bounds execution and the store quota bounds commit transactions. A hard wall-clock claim also requires bounded memories.
 
-`VIC` commits buffered stores in program order and clears the region. In the multi-cycle RTL, this takes one accepted memory transaction per buffered entry.
+`VV64-A0` adds `VTRYA`, which aborts on interrupt instead of deferring it. The inherited `VTRY` behavior remains unchanged.
 
-### 7.2 Abort conditions
+## Traps and CSRs
 
-A region aborts when any of the following occurs:
+Outside a region, a fault records `VEPC`, `VCAUSE`, and `VBADADDR`, disables interrupts, and transfers to `VTVEC`.
 
-- `VCHK` observes zero;
-- `VABT` executes;
-- a capability, alignment, permission, or secret-flow check fails;
-- the store quota is exhausted;
-- the instruction budget is exhausted;
-- a prohibited irreversible control instruction executes;
-- another `VTRY` attempts to nest a region.
+The host runner stops when `VTVEC` is zero. That is a debugging policy, not a different architectural rule. CSR addresses and causes are listed in [`ISA.md`](ISA.md).
 
-Abort behavior is:
+## Timing
 
-1. discard all buffered stores;
-2. set `VERROR` to the explicit error or architectural cause;
-3. clear the active-region state;
-4. scrub all currently secret-tagged registers;
-5. branch to the encoded failure target.
+A0 avoids caches, dynamic branch prediction, speculation, and out-of-order issue. That reduces hidden state; it does not prove a worst-case execution time.
 
-### 7.3 What is and is not rolled back
+The current RTL is multi-cycle. Fetch depends on `imem_ready_i`; memory and commit depend on `dmem_ready_i`. A timing profile must bind those interfaces and publish cycle limits before the project claims hard real-time behavior.
 
-A0 guarantees rollback of buffered **data-memory stores** only. General registers and non-secret capability-register changes are not restored. Secret-tagged registers are scrubbed rather than restored.
+## Evidence labels
 
-Consequently, software must treat the failure target as a recovery boundary and must not assume a transactional register snapshot.
+- **model-covered** — a Python test covers the behavior;
+- **RTL-covered** — a self-checking RTL test covers it;
+- **formally constrained** — the formal harness contains an invariant;
+- **FPGA-observed** — the same binary ran on hardware;
+- **externally reviewed** — an independent review exists.
 
-MMIO is not part of the A0 memory model. A future SoC must either reject MMIO from a region or route it through a commit-aware command queue. Ordinary irreversible device writes may not be described as rollback-safe.
-
-### 7.4 Interrupt behavior
-
-External interrupts are deferred while a region is active, including its commit phase. The encoded instruction budget bounds execution before `VIC` or abort; the store quota bounds commit transactions.
-
-The exact wall-clock latency also depends on memory ready signals. A future timing profile must define a bounded memory target before claiming a hard real-time interrupt limit.
-
-## 8. Traps and control/status registers
-
-Outside a Victory Region, architectural faults save:
-
-- faulting instruction PC in `VEPC`;
-- cause in `VCAUSE`;
-- relevant address or explicit value in `VBADADDR`;
-- then clear interrupt enable and transfer to `VTVEC`.
-
-The host-side Python runner stops and marks a fault when `VTVEC` remains zero. This is a debugging policy of the executable tool; the architectural transition remains a transfer to `VTVEC`.
-
-A0 CSRs are listed in [`ISA.md`](ISA.md). Only interrupt enable, trap vector, exception PC, and Victory error have writable behavior. Read-only counters silently ignore writes.
-
-## 9. Timing status
-
-A0 intentionally avoids caches, speculative execution, out-of-order scheduling, and dynamic branch prediction. That reduces hidden state but does not by itself prove timing predictability.
-
-The current RTL is multi-cycle:
-
-- most register instructions complete in one execute state;
-- load and non-region store latency depends on `dmem_ready_i`;
-- `VIC` latency depends on buffered-store count and `dmem_ready_i`;
-- fetch latency depends on `imem_ready_i`.
-
-A later `VV32-T1` timing profile must bind these interfaces to bounded memories and publish maximum-cycle tables before the project claims hard real-time behavior.
-
-## 10. Conformance levels
-
-The project distinguishes:
-
-- **model-covered** — behavior has Python unit tests;
-- **RTL-covered** — a self-checking RTL simulation exercises it;
-- **formally constrained** — an invariant appears in the formal harness;
-- **FPGA-observed** — the same binary has run on the target board;
-- **externally reviewed** — independent review exists.
-
-A README feature entry must not imply a stronger level than the available evidence.
+A feature description should not imply a stronger level than the evidence.

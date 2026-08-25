@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "family": "VICTORY-V",
+  "source_architecture": "VV32-A0",
+  "instruction_width_bits": 32,
+  "family_rules": [
+    "capability_checked_memory",
+    "monotonic_authority",
+    "secret_flow_tracking",
+    "bounded_victory_regions",
+    "root_lock",
+    "explicit_failure",
+    "non_speculative_baseline"
+  ],
+  "architectures": {
+    "VV32-A0": {
+      "status": "implemented-alpha",
+      "xlen": 32,
+      "address_bits": 32,
+      "translation": "none",
+      "inherits": null,
+      "hardware_target": "Tang Nano 20K",
+      "required_rules": [
+        "capability_checked_memory",
+        "monotonic_authority",
+        "secret_flow_tracking",
+        "bounded_victory_regions",
+        "root_lock",
+        "explicit_failure",
+        "non_speculative_baseline"
+      ]
+    },
+    "VV64-A0": {
+      "status": "design-draft",
+      "xlen": 64,
+      "address_bits": 64,
+      "translation": "optional",
+      "inherits": "VV32-A0",
+      "hardware_target": "Tang Console 138K",
+      "required_rules": [
+        "capability_checked_memory",
+        "monotonic_authority",
+        "secret_flow_tracking",
+        "bounded_victory_regions",
+        "root_lock",
+        "explicit_failure",
+        "non_speculative_baseline",
+        "tagged_context",
+        "sealed_control_flow",
+        "capability_checked_atomics",
+        "translation_cannot_add_authority",
+        "interrupt_abort_region"
+      ]
+    }
+  },
+  "system_profiles": {
+    "VV64-L0-flat": {
+      "architecture": "VV64-A0",
+      "status": "planned",
+      "mmu": false,
+      "userspace_abi": "FDPIC-or-FLAT",
+      "virtual_address_bits": null
+    },
+    "VV64-L0-paged": {
+      "architecture": "VV64-A0",
+      "status": "planned",
+      "mmu": true,
+      "userspace_abi": "ELF",
+      "virtual_address_bits": 39
+    }
+  },
+  "extension_pages": {
+    "0x36": "XALU",
+    "0x37": "XMEM",
+    "0x38": "XATOM",
+    "0x39": "XCALL",
+    "0x3a": "XSYS",
+    "0x3b": "XVM",
+    "0x3c-0x3f": "reserved"
+  }
+}

@@ -1,17 +1,17 @@
-# Formal harness
+# Formal Checks
 
-The harness is deliberately small at the A0 stage. It currently proves bounded safety invariants rather than full ISA equivalence:
+The current harness checks bounded invariants for the `VV32-A0` RTL:
 
-- `r0` remains zero and untagged;
-- external writes from an active Victory Region occur only during `ST_COMMIT`;
+- `r0` stays zero and untagged;
+- a region does not issue an external write before commit;
 - `VLOCK` is monotonic until reset;
-- the store-buffer count never exceeds its physical depth;
-- the architectural program counter remains word-aligned.
+- the store-buffer count stays inside its physical depth;
+- the program counter remains aligned.
 
-Run with a SymbiYosys installation:
+Run it with SymbiYosys:
 
 ```bash
 sby -f formal/vv32_core.sby
 ```
 
-The next verification gate is a differential proof between the Python executable model and RTL instruction traces. Passing this harness alone is **not** evidence that VV32-A0 is secure or production-ready.
+These assertions are not a full proof of the ISA or a security certificate. The next useful step is generated differential traces between the Python model and RTL. Future `VV64-A0` checks add directory generations, tagged context, translation authority, sealed returns, and `VTRYA`.

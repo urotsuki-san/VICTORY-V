@@ -1,70 +1,75 @@
 # Roadmap
 
-## Phase 0 — Architecture seed
+`VV32-A0` remains the working source architecture. `VV64-A0` grows from it. The tracks stay separate so Linux work does not turn the small core into an oversized compromise.
 
-**Status: complete for A0**
+## Shared contract
 
-- define the fixed 32-bit encoding;
-- define register metadata, capability permissions, secret tags, traps, and CSRs;
-- redefine `VIC` as Victory Integrity Commit;
-- publish an explicit threat model and non-goals.
+**State: active**
 
-## Phase 1 — Executable contract
+- keep the family manifest, Python profiles, documentation, and implementation declarations in sync;
+- finish generated model/RTL differential tests for `VV32-A0`;
+- review current RTL warnings;
+- run the formal harness in a pinned tool environment;
+- begin a Sail model before `VV64-A0` encoding freezes;
+- define one trace and conformance format for both widths.
 
-**Status: implemented, validation continuing**
+## VV32-A0 hardware
 
-- dependency-free assembler and disassembler;
-- deterministic Python reference machine;
-- runnable commit, rollback, capability-fault, and secret-flow examples;
-- machine-readable ISA manifest and drift checker;
-- cross-platform test workflow.
+**State: pre-FPGA RTL**
 
-## Phase 2 — Pre-FPGA RTL
+- close the current pre-hardware gate;
+- add Tang Nano 20K clock, reset, BSRAM, UART, timer, and interrupt wiring;
+- run identical binaries in the Python model, RTL simulation, and FPGA;
+- publish utilization, timing, tool versions, bitstream hash, and UART transcript;
+- consider tagged context memory only as a later VV32 profile.
 
-**Status: prototype present; gate not yet closed**
+`VV32-A0` is complete when it is a small reproducible FPGA CPU, not when the 64-bit track starts.
 
-- multi-cycle in-order SystemVerilog core;
-- capability metadata and secret-tag register state;
-- bounded store buffer and multi-cycle `VIC` commit;
-- self-checking Icarus testbench;
-- initial formal assertions.
+## VV64-A0 architecture
 
-Remaining work:
+**State: design draft**
 
-- generated differential model/RTL testing;
-- close simulator warnings and model/RTL edge-case discrepancies;
-- run the formal harness in CI or publish reproducible local results;
-- decide capability save/restore format;
-- freeze the exact A0 hardware subset.
+- freeze extension-page formats;
+- specify the Capability Directory and tagged context memory;
+- finish privilege, trap, atomic, and memory-ordering rules;
+- specify `VTRYA`, sealed calls, protected returns, and generations;
+- write an executable 64-bit model;
+- add a fast emulator for compiler and kernel testing;
+- implement a single-issue in-order SystemVerilog core;
+- test shared family invariants against both widths.
 
-## Phase 3 — Tang Nano 20K
+## VV64-L0/flat Linux
 
-**Status: not started**
+**State: planned**
 
-- board clock/reset and constraints;
-- instruction and data BSRAM wrappers;
-- UART and timer;
-- reproducible OSS and vendor synthesis flows;
-- utilization, timing, and bitstream provenance;
-- hardware conformance transcript.
+- create the LLVM/Clang `victoryv64` target and relocations;
+- define the flat ABI and tagged context frame;
+- add an out-of-tree `arch/victoryv` port with `CONFIG_MMU=n`;
+- support FDPIC or FLAT loading;
+- boot an initramfs to a serial shell in the emulator;
+- run the same image on Tang Console 138K after DDR3 tests pass.
 
-## Phase 4 — Software platform
+## VV64-L0/paged Linux
 
-**Status: planned**
+**State: planned after flat**
 
-- minimal C compiler path or LLVM backend;
-- C runtime and linker script;
-- capability-aware context format;
-- FreeRTOS port;
-- later Zephyr evaluation.
+- freeze the `V39` page-table format;
+- implement walks, TLBs, faults, and invalidation;
+- preserve tags through caches and aliases;
+- enable conventional ELF process mappings;
+- repeat compiler, kernel, emulator, and FPGA conformance tests.
 
-## Phase 5 — Evidence
+## Dual-core system
 
-**Status: planned**
+**State: later**
 
-- generated conformance corpus;
-- model/RTL/FPGA differential traces;
-- resource and performance comparison against appropriately scoped small cores;
-- fault-injection and negative tests;
-- independent review;
-- stable profile only after evidence supports it.
+- place `VV32-A0` and `VV64-A0` on one 138K design only after each works alone;
+- give VV32 private on-chip memory and a narrow checked mailbox;
+- prevent Linux, DMA, and page tables from reaching VV32-private authority;
+- demonstrate a bounded protected service.
+
+## Stable-profile evidence
+
+A stable profile needs generated conformance, model/RTL/FPGA differential traces, negative security tests, FPGA timing and resource results, compiler and kernel tests, and independent review.
+
+The next implementation work is the VV32 differential gate and the first executable VV64 model.

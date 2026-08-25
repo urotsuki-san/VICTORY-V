@@ -1,15 +1,7 @@
-# Security policy
+# Security Policy
 
-VICTORY-V is an experimental research architecture and is **not suitable for protecting production secrets or controlling safety-critical systems**.
+VICTORY-V is experimental architecture work. It is not suitable for production secrets, medical equipment, vehicle control, or other safety-critical use.
 
-Report implementation defects through a GitHub issue unless disclosure would create an immediate risk to a real deployment. Because no production deployment is supported, there is currently no security-support SLA or guaranteed embargo process.
+Report implementation defects through a GitHub issue. Include the affected commit, the smallest reproducer, expected and observed behavior, and whether the problem crosses a capability, secret-flow, Victory Region, domain, or tag boundary.
 
-Please include:
-
-- the affected commit;
-- model, RTL, or documentation component;
-- the smallest reproducer available;
-- expected and observed behavior;
-- whether the issue crosses a documented capability, secret-flow, or Victory Region boundary.
-
-Passing the repository test suite does not constitute security certification, formal ISA verification, side-channel resistance, or silicon validation.
+There is no production deployment or security-support SLA. A passing test suite is useful evidence for covered cases, not certification of the ISA, RTL, toolchain, FPGA bitstream, side-channel behavior, or future Linux port.

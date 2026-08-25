@@ -1,7 +1,18 @@
-"""Executable reference model for the experimental VICTORY-V VV32-A0 ISA."""
+"""VICTORY-V assembler, reference model, and architecture profiles."""
 
 from .assembler import AssembledProgram, assemble
+from .family import ARCHITECTURES, SYSTEM_PROFILES, ArchitectureProfile, SystemProfile
 from .machine import Machine, MachineConfig, RunResult
 
-__all__ = ["AssembledProgram", "Machine", "MachineConfig", "RunResult", "assemble"]
-__version__ = "0.1.0a0"
+__all__ = [
+    "ARCHITECTURES",
+    "SYSTEM_PROFILES",
+    "ArchitectureProfile",
+    "AssembledProgram",
+    "Machine",
+    "MachineConfig",
+    "RunResult",
+    "SystemProfile",
+    "assemble",
+]
+__version__ = "0.2.0a0"

@@ -1,4 +1,4 @@
-"""Command-line interface for the VICTORY-V executable model."""
+"""Command-line tools for the VICTORY-V repository."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import sys
 from .assembler import assemble_file, words_from_bytes
 from .disassembler import disassemble
 from .errors import VictoryError
+from .family import ARCHITECTURES, SYSTEM_PROFILES
 from .machine import Machine, MachineConfig
 
 
@@ -23,7 +24,10 @@ def _cmd_asm(args: argparse.Namespace) -> int:
     program.write(args.output)
     if args.listing:
         lines = disassemble(program.words)
-        listing = "\n".join(f"{index * 4:08x}: {word:08x}  {text}" for index, (word, text) in enumerate(zip(program.words, lines, strict=True)))
+        listing = "\n".join(
+            f"{index * 4:08x}: {word:08x}  {text}"
+            for index, (word, text) in enumerate(zip(program.words, lines, strict=True))
+        )
         Path(args.listing).write_text(listing + "\n", encoding="utf-8")
     print(f"assembled {len(program.words)} instruction word(s) -> {args.output}")
     return 0
@@ -59,22 +63,46 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 1 if result.faulted else 0
 
 
+def _cmd_profiles(_args: argparse.Namespace) -> int:
+    rows: list[tuple[str, str, str, str, str]] = []
+    for profile in ARCHITECTURES.values():
+        rows.append((profile.name, str(profile.xlen), profile.translation, profile.status, profile.hardware_target))
+    for profile in SYSTEM_PROFILES.values():
+        rows.append(
+            (
+                profile.name,
+                str(ARCHITECTURES[profile.architecture].xlen),
+                "required" if profile.mmu else "none",
+                profile.status,
+                ARCHITECTURES[profile.architecture].hardware_target,
+            )
+        )
+
+    headings = ("PROFILE", "XLEN", "TRANSLATION", "STATUS", "TARGET")
+    widths = [max(len(headings[index]), *(len(row[index]) for row in rows)) for index in range(len(headings))]
+    print("  ".join(headings[index].ljust(widths[index]) for index in range(len(headings))))
+    print("  ".join("-" * width for width in widths))
+    for row in rows:
+        print("  ".join(row[index].ljust(widths[index]) for index in range(len(row))))
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="vv", description="VICTORY-V VV32-A0 tools")
+    parser = argparse.ArgumentParser(prog="vv", description="VICTORY-V command-line tools")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    asm = subparsers.add_parser("asm", help="assemble a .vs source file")
+    asm = subparsers.add_parser("asm", help="assemble a VV32-A0 source file")
     asm.add_argument("source", type=Path)
     asm.add_argument("-o", "--output", type=Path, required=True)
     asm.add_argument("--listing", type=Path)
     asm.set_defaults(func=_cmd_asm)
 
-    disasm = subparsers.add_parser("disasm", help="disassemble source or binary")
+    disasm = subparsers.add_parser("disasm", help="disassemble VV32-A0 source or binary")
     disasm.add_argument("program")
     disasm.add_argument("--base", type=lambda value: int(value, 0), default=0)
     disasm.set_defaults(func=_cmd_disasm)
 
-    run = subparsers.add_parser("run", help="run source or binary in the reference model")
+    run = subparsers.add_parser("run", help="run VV32-A0 source or binary in the reference model")
     run.add_argument("program")
     run.add_argument("--memory", type=lambda value: int(value, 0), default=64 * 1024)
     run.add_argument("--store-depth", type=int, default=8)
@@ -82,6 +110,9 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--trace", action="store_true")
     run.add_argument("--registers", action="store_true")
     run.set_defaults(func=_cmd_run)
+
+    profiles = subparsers.add_parser("profiles", help="show implemented and planned family profiles")
+    profiles.set_defaults(func=_cmd_profiles)
     return parser
 
 

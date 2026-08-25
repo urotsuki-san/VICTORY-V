@@ -1,13 +1,20 @@
 # Changelog
 
-All notable project changes are documented here. The project follows semantic-versioning intent, but A0 architecture details may still change incompatibly before `1.0.0`.
+## 0.2.0-alpha.0 — 2026-08-26
+
+- Defined `VV32-A0` as the permanent source architecture of the VICTORY-V family.
+- Added the native `VV64-A0` design contract without introducing another host ISA.
+- Kept page translation optional and split Linux work into flat and paged profiles.
+- Added the Capability Directory, tagged context, sealed control flow, capability-checked atomics, and interrupt-abort Victory Region design.
+- Added a machine-readable family manifest, Python profile API, `vv profiles`, tests, and manifest checks.
+- Added native Linux, FPGA, and primary-source research notes.
+- Reworked repository prose while preserving the README layout and hero image.
+- Fixed the cross-platform Python CI installation path.
 
 ## 0.1.0-alpha.0 — 2026-08-25
 
-- Defined the executable `VV32-A0` 32-bit ISA contract.
+- Defined the executable `VV32-A0` instruction contract.
 - Added the assembler, disassembler, binary format, and Python reference machine.
-- Added capability bounds/permission enforcement and irreversible `VLOCK`.
-- Added secret-tag propagation, prohibited secret branches/addresses, and authorized declassification.
-- Added bounded Victory Regions with store forwarding, commit, rollback, error reporting, quotas, and instruction budgets.
-- Added a board-independent SystemVerilog core, self-checking testbench, and initial formal harness.
-- Added CI, examples, architecture documentation, threat model, provisional ABI, and Tang Nano 20K handoff gate.
+- Added capability bounds and permission checks, `VLOCK`, Secret Tags, and explicit declassification.
+- Added bounded Victory Regions with forwarding, commit, rollback, errors, quotas, and budgets.
+- Added a board-independent SystemVerilog core, self-checking testbench, formal harness, CI, examples, and the Tang Nano 20K handoff gate.

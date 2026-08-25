@@ -1,43 +1,29 @@
 # VV32-A0 RTL
 
-`vv32_core.sv` is a board-independent, single-issue, in-order, multi-cycle SystemVerilog implementation of the A0 architecture.
+`vv32_core.sv` is the current board-independent `VV32-A0` core. It is a single-issue, in-order, multi-cycle design.
 
-## Interfaces
+The interfaces cover instruction fetch, 32-bit data transactions with byte strobes, one external interrupt, and basic halt/debug status. Byte and halfword accesses are converted to aligned word transactions.
 
-- instruction request/address/read-data/ready;
-- 32-bit data request with byte strobes and ready handshake;
-- one level-sensitive external interrupt;
-- halt and debug status outputs.
+Implemented in the prototype:
 
-The core expects a word-oriented data bus. Byte and halfword operations are converted to aligned word transactions with write strobes.
-
-## Implemented mechanisms
-
-- all A0 integer/control opcodes;
-- per-register capability metadata and secret tags;
-- capability-only loads and stores;
-- secret branch/address/store restrictions;
-- `VLOCK` root creation lock;
-- bounded store buffer;
-- load forwarding from buffered writes;
+- the current A0 integer and control opcodes;
+- capability metadata and Secret Tags per register;
+- capability-only data access;
+- secret branch, address, and public-store checks;
+- `VLOCK`;
+- bounded store buffering and forwarding;
 - multi-cycle `VIC` commit;
 - region abort and secret-register scrub;
-- minimal trap/CSR/interrupt state.
+- basic traps, CSRs, and interrupts.
 
-## Simulation
+Run the self-checking testbench with:
 
 ```bash
 make rtl-test
 ```
 
-The self-checking testbench creates a capability, commits value `2`, attempts to overwrite it with `99`, forces `VCHK` failure, verifies rollback, checks `VERROR`, and verifies that root creation is locked.
+It commits value `2`, attempts a failed overwrite, checks rollback and `VERROR`, and confirms that root creation stays locked.
 
-## Known limitations
+Still missing: board integration, tagged spill/fill, differential traces, reviewed synthesis warnings, timing results, and production CDC/reset analysis.
 
-- no board wrapper, RAM primitive wrapper, PLL, UART, timer, or constraints;
-- no capability spill/fill format;
-- no differential trace harness yet;
-- cycle counters are diagnostic and not yet a normative timing contract;
-- MMIO semantics are not defined;
-- no production CDC/reset analysis;
-- no FPGA synthesis or timing result has been published.
+`VV64-A0` will be a separate core that shares the family contract. This file should not be widened until the small VV32 implementation works on its own target.

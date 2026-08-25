@@ -26,23 +26,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install editable package
-        run: python -m pip install -e . --no-build-isolation
+      - name: Install build tools
+        run: python -m pip install --upgrade pip setuptools
+      - name: Install package
+        run: python -m pip install -e .
       - name: Compile Python sources
         run: python -m compileall -q src tests tools
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
       - name: Verify ISA declarations
         run: python tools/check_isa_sync.py
+      - name: Verify family manifest
+        run: python tools/check_family_manifest.py
+      - name: Create build directory
+        run: python -c "from pathlib import Path; Path('build').mkdir(exist_ok=True)"
       - name: Assemble and run examples
-        shell: bash
         run: |
-          mkdir -p build
           python -m victory_v.cli asm examples/victory.vs -o build/victory.vbin --listing build/victory.lst
           python -m victory_v.cli run examples/victory.vs
           python -m victory_v.cli run examples/rollback.vs
           python -m victory_v.cli run examples/capability_fault.vs
           python -m victory_v.cli run examples/secret_flow.vs
+          python -m victory_v.cli profiles
       - name: Check installed dependencies
         run: python -m pip check
 

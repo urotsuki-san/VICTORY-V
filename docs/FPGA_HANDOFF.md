@@ -1,92 +1,72 @@
-# Tang Nano 20K FPGA Handoff
+# FPGA Targets and Handoff Gates
 
-## Objective
+VICTORY-V has two hardware tracks. They share architectural tests but do not share one oversized first core.
 
-The first hardware target is one **Tang Nano 20K** board. This document defines the boundary between the board-independent A0 project and the board-specific implementation.
+## VV32-A0 — Tang Nano 20K
 
-No second FPGA board is required for the first milestone.
+### Pre-hardware gate
 
-## Pre-FPGA gate
-
-Board work begins only after all blocking items pass on the exact main-branch commit intended for hardware:
-
-- [x] fixed-width instruction encoding documented;
-- [x] machine-readable opcode/CSR/cause manifest;
+- [x] fixed instruction encoding and machine-readable manifest;
 - [x] assembler and binary image generation;
-- [x] executable reference model;
+- [x] executable Python model;
 - [x] capability, secret-flow, commit, rollback, quota, and budget tests;
 - [x] board-independent SystemVerilog core;
-- [x] self-checking RTL smoke test for capability access, commit, rollback, and `VLOCK`;
-- [x] CI definition for Windows, Linux, macOS model tests and Linux RTL simulation;
-- [ ] CI is green on the public repository commit;
-- [ ] all RTL warnings are reviewed rather than suppressed without explanation;
-- [ ] Python and RTL traces are differentially compared for a generated instruction corpus;
-- [ ] formal harness passes with a documented tool version;
-- [ ] capability context-save strategy is either implemented or explicitly excluded from the first bare-metal bitstream.
+- [x] self-checking RTL smoke test;
+- [x] public CI definition;
+- [ ] public CI is green on the exact hardware commit;
+- [ ] RTL warnings are reviewed;
+- [ ] generated Python/RTL differential traces pass;
+- [ ] formal checks pass with pinned tool versions;
+- [ ] capability context switching is implemented or explicitly excluded from the first bitstream.
 
-The unchecked items are the remaining pre-hardware work. A green smoke test is necessary but not sufficient.
-
-## First SoC scope
+### First SoC
 
 ```text
 Tang Nano 20K
-├── VV32-A0 core
-├── on-chip instruction RAM
-├── on-chip capability-checked data RAM
-├── boot/reset controller
-├── UART transmit and receive
-├── machine timer
-├── external IRQ aggregation
-└── minimal debug/status registers
+├── VV32-A0
+├── instruction BSRAM
+├── capability-checked data BSRAM
+├── reset controller
+├── UART
+├── timer
+└── interrupt input
 ```
 
-The first bitstream excludes:
+External SDRAM, MMU, caches, HDMI, and Linux stay out of the first VV32 bitstream.
 
-- external SDRAM;
-- cache;
-- MMU;
-- Linux;
-- HDMI;
-- dynamic branch prediction;
-- speculative execution;
-- multicore;
-- FreeRTOS until timer/interrupt/context behavior is stable.
+## VV64-A0 — Tang Console 138K
 
-## Proposed first memory organization
+The 138K target uses a native VICTORY-V core. Board frameworks may supply clock, reset, DDR, UART, SD, and interconnect support; they do not supply a substitute CPU.
 
-A0 currently uses separate instruction and data buses. The initial SoC can therefore use overlapping zero-based address spaces without ambiguity:
+### Pre-hardware gate
 
-| Bus | Address | Size | Purpose |
-|---|---:|---:|---|
-| instruction | `0x0000_0000` | 32–64 KiB | boot image / program ROM or RAM |
-| data | `0x0000_0000` | 32–64 KiB | deterministic on-chip working memory |
+- [ ] base and extension encoding frozen for the first prototype;
+- [ ] executable 64-bit model and assembler;
+- [ ] Capability Directory and tagged context tested;
+- [ ] privilege, traps, timer, interrupts, atomics, and fences modeled;
+- [ ] self-checking RTL core simulation;
+- [ ] generated model/RTL differential corpus;
+- [ ] physical-mode boot ROM and linker map;
+- [ ] board clock/reset and UART wrapper;
+- [ ] DDR3 controller tested independently before cache enable.
 
-MMIO is deliberately deferred until its interaction with Victory Regions is specified. The first UART milestone may use a dedicated core-side debug port rather than pretending irreversible device writes are transactional memory.
-
-## Tool flow
-
-The intended open flow is:
+### Bring-up order
 
 ```text
-SystemVerilog
-  → Yosys
-  → nextpnr-himbaechel
-  → Gowin packer / Apicula-compatible flow
-  → openFPGALoader
-  → Tang Nano 20K
+on-chip RAM + UART
+  -> tagged context switch
+  -> timer and interrupts
+  -> generation and sealed-call tests
+  -> Victory Region and VTRYA tests
+  -> DDR3 memory test
+  -> no-MMU Linux early console
+  -> FDPIC or FLAT userspace
+  -> V39 MMU
+  -> paged Linux
 ```
 
-A Gowin vendor-tool build should be retained as a cross-check before any correctness claim depends on one synthesis flow.
+Starting with DDR3, caches, an MMU, and Linux in one bitstream would make failures needlessly hard to locate.
 
-## First observable milestones
+## Publication rule
 
-1. clock/reset and instruction fetch;
-2. `HALT` smoke image;
-3. UART text: `VICTORY-V IS ALIVE`;
-4. ALU conformance image;
-5. capability bounds failure image;
-6. Victory commit/rollback image;
-7. timer interrupt and bounded-region deferral image;
-8. reference-model/FPGA trace comparison.
-
-The first board release should publish the exact source commit, tool versions, constraints, utilization, maximum clock, bitstream hash, and UART transcript.
+A board release should include source and tool revisions, constraints, achieved clock, resource use, bitstream hash, UART transcript, conformance results, and known warnings. Synthesis alone is not enough; the same tests must agree in the model, RTL, and hardware.
