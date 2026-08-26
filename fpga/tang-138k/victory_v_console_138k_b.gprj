@@ -1,0 +1,21 @@
+<?xml version="1" encoding="UTF-8"?>
+<!DOCTYPE gowin-fpga-project>
+<Project>
+    <Template>FPGA</Template>
+    <Version>5</Version>
+    <Device name="GW5AST-138B" pn="GW5AST-LV138PG484AC1/I0">gw5ast138b-011</Device>
+    <FileList>
+        <File path="../../rtl/vv32_pkg.sv" type="file.verilog" enable="1"/>
+        <File path="../../rtl/vv32_core.sv" type="file.verilog" enable="1"/>
+        <File path="../../rtl/vv64_pkg.sv" type="file.verilog" enable="1"/>
+        <File path="../../rtl/vv64_core.sv" type="file.verilog" enable="1"/>
+        <File path="../../rtl/common/vv_reset_sync.sv" type="file.verilog" enable="1"/>
+        <File path="../../rtl/common/vv_uart_tx.sv" type="file.verilog" enable="1"/>
+        <File path="../../rtl/common/vv_sram.sv" type="file.verilog" enable="1"/>
+        <File path="../../rtl/boot/vv_bringup_rom.sv" type="file.verilog" enable="1"/>
+        <File path="../../rtl/soc/vv_dual_bringup.sv" type="file.verilog" enable="1"/>
+        <File path="console_top.sv" type="file.verilog" enable="1"/>
+        <File path="console.cst" type="file.cst" enable="1"/>
+        <File path="console.sdc" type="file.sdc" enable="1"/>
+    </FileList>
+</Project>

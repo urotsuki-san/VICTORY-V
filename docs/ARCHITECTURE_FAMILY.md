@@ -2,17 +2,17 @@
 
 ## Lineage
 
-`VV32-A0` is the source architecture. It is not a temporary bootstrap ISA and it will not be retired when the 64-bit work begins.
+`VV32-A0` is the source architecture. It is not a temporary bootstrap ISA and it will not be retired as the 64-bit work grows.
 
-`VV64-A0` is the general-purpose continuation of the same design. It widens the integer and address state, adds operating-system machinery, and keeps the rules that make the machine VICTORY-V.
+`VV64-A0` is the general-purpose continuation of the same design. It widens integer and address state, adds the machinery needed by an operating system, and keeps the rules that make the machine VICTORY-V.
 
 ```text
 VV32-A0
    ├── compact FPGA and deterministic control work
    └── shared architectural contract
             └── VV64-A0
-                    ├── VV64-L0/flat   no MMU
-                    └── VV64-L0/paged  V39 MMU
+                    ├── VV64-L0/flat   no page translation
+                    └── VV64-L0/paged  V39 later
 ```
 
 The machine-readable copy is [`isa/victory-v-family.json`](../isa/victory-v-family.json). `vv profiles` prints the same data.
@@ -33,7 +33,7 @@ A core that drops one of these rules is not VICTORY-V merely because it reuses a
 
 ## What VV64 adds
 
-`VV64-A0` adds the pieces needed by compilers and operating systems:
+The full `VV64-A0` contract adds:
 
 - 64-bit integer registers and program counter;
 - Monitor, Supervisor, and User privilege;
@@ -41,12 +41,12 @@ A core that drops one of these rules is not VICTORY-V merely because it reuses a
 - capability-checked atomics and fences;
 - sealed call gates and protected returns;
 - an interrupt-abort form of Victory Region;
-- an optional `V39` translation profile;
+- optional `V39` translation;
 - cache and TLB rules that preserve tags and authority.
 
-The first 64-bit core remains single-issue and in order. Floating point, vectors, SMP, and out-of-order execution are later work.
+The first FPGA subset implements the widened base machine, a protected Capability Directory, Secret Tags, Victory Regions, `VLOCK`, doubleword memory access, and basic trap/interrupt state. The operating-system extensions remain visible as missing work rather than empty stubs.
 
-## MMU policy
+## Translation policy
 
 Physical mode is mandatory. Page translation is optional.
 
@@ -61,44 +61,43 @@ capability rights
 
 A page table may deny an access. It may not grant authority that the capability or domain does not already hold.
 
-This keeps the same pointer and protection model in bare metal, no-MMU Linux, and paged Linux.
+This keeps the same pointer and protection model in bare metal, no-MMU Linux, and a later paged Linux profile.
 
 ## Encoding continuity
 
-Both widths use fixed 32-bit instructions. Existing `VV32-A0` primary opcodes retain their positions. The remaining primary-opcode space is reserved by function rather than consumed ad hoc:
+Both widths use fixed 32-bit instructions. Existing `VV32-A0` primary opcodes retain their positions. The remaining primary-opcode space is reserved by function:
 
 | Opcode | Page | Purpose |
 |---:|---|---|
 | `0x36` | `XALU` | division, remainder, word operations, 64-bit constant lanes |
-| `0x37` | `XMEM` | 64-bit access and tagged capability spill/fill |
+| `0x37` | `XMEM` | doubleword and tagged context memory operations |
 | `0x38` | `XATOM` | reservation, compare/exchange, atomic RMW, fences |
 | `0x39` | `XCALL` | sealed entry, protected call and return |
 | `0x3a` | `XSYS` | privilege, context, interrupt, and domain operations |
 | `0x3b` | `XVM` | optional page translation and TLB maintenance |
 | `0x3c`–`0x3f` | reserved | left unused in A0 |
 
-The sub-opcode layouts are not frozen yet.
+The FPGA subset assigns only `XMEM.CLDD` and `XMEM.CSTD`. Other sub-opcodes are still open.
 
 ## Capability Directory
 
-Full 64-bit bounds and policy fields are expensive to duplicate in every FPGA register and cache word. The draft therefore gives `VV64-A0` a protected Capability Directory.
+Full 64-bit bounds and policy fields are expensive to duplicate in every FPGA register and cache word. `VV64-A0` therefore uses a protected Capability Directory.
 
-A tagged register carries a cursor plus a non-forgeable directory reference. The directory entry contains:
+A tagged register carries a cursor plus a non-forgeable directory reference. The first RTL directory stores:
 
 ```text
-base, top, permissions, domain, object type, generation, sealed state
+base, top, permissions, validity, generation
 ```
 
-Reusing an entry changes its generation. A stale tagged reference then fails instead of silently acquiring authority over a new object.
+The full architecture will add domain, object type, and sealing state. Reusing an entry changes its generation. A stale tagged reference then fails instead of silently acquiring authority over a new object.
 
 `CBOUNDS` is exact-or-fail. It may reject an interval that an implementation cannot represent; it may not round the interval outward.
 
 ## Implementation tracks
 
-The family contract does not force one microarchitecture.
+- `VV32-A0` remains the compact track and still targets Tang Nano 20K.
+- `VV64-A0` is a separate native core, not a widened build flag on VV32.
+- The Tang 138K bring-up image instantiates both cores with separate RAM and one shared UART/status page.
+- Co-residence currently proves wiring and independent execution only. It does not imply coherent shared memory or a completed heterogeneous runtime.
 
-- `VV32-A0` stays compact and is still aimed at Tang Nano 20K.
-- The first `VV64-A0` implementation is aimed at Tang Console 138K.
-- Both may later share one 138K design, but only after each works independently.
-
-See [`VV64.md`](VV64.md), [`LINUX_PORT.md`](LINUX_PORT.md), and [`FPGA_HANDOFF.md`](FPGA_HANDOFF.md).
+See [`VV64.md`](VV64.md), [`LINUX_PORT.md`](LINUX_PORT.md), [`FPGA_HANDOFF.md`](FPGA_HANDOFF.md), and [`FPGA_138K_BRINGUP.md`](FPGA_138K_BRINGUP.md).

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0-alpha.0 — 2026-08-26
+
+- Added a native 64-bit SystemVerilog core for the first `VV64-A0` FPGA subset.
+- Kept the inherited VV32 primary opcode positions and added `XMEM` doubleword access.
+- Added a protected 32-entry Capability Directory with generation-checked register references.
+- Added VV64 Secret Tags, `VLOCK`, Victory Regions, basic CSRs, traps, and an interrupt input.
+- Added a Tang 138K bring-up SoC with VV32-A0 and VV64-A0 in one image, separate RAM, shared UART, mailboxes, and status LEDs.
+- Added generated boot ROMs, self-checking VV64 and dual-core simulations, and consistency checks.
+- Added Gowin projects for Tang Mega and Tang Console 138K, device revisions B and C.
+- Documented the exact boundary between the FPGA subset and the later Linux-capable architecture.
+
 ## 0.2.0-alpha.0 — 2026-08-26
 
 - Defined `VV32-A0` as the permanent source architecture of the VICTORY-V family.

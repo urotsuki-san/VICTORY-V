@@ -10,36 +10,36 @@ A native processor family built from `VV32-A0`, with `VV64-A0` as its 64-bit con
 
 <p>
   <a href="https://github.com/urotsuki-san/VICTORY-V/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/urotsuki-san/VICTORY-V/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Status architecture alpha" src="https://img.shields.io/badge/status-architecture%20alpha-7c3aed?style=for-the-badge">
-  <img alt="VICTORY-V profiles" src="https://img.shields.io/badge/ISA-VV32--A0%20%7C%20VV64--A0%20draft-1d4ed8?style=for-the-badge">
+  <img alt="Status RTL alpha" src="https://img.shields.io/badge/status-RTL%20alpha-7c3aed?style=for-the-badge">
+  <img alt="VICTORY-V profiles" src="https://img.shields.io/badge/ISA-VV32--A0%20%7C%20VV64--A0-1d4ed8?style=for-the-badge">
   <img alt="Python 3.11 plus" src="https://img.shields.io/badge/Python-3.11%2B-0f766e?style=for-the-badge&logo=python&logoColor=white">
   <img alt="SystemVerilog" src="https://img.shields.io/badge/RTL-SystemVerilog-334155?style=for-the-badge">
   <a href="LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/license-MIT-0f766e?style=for-the-badge"></a>
 </p>
 
-**[Quick start](#quick-start)** · **[Family](docs/ARCHITECTURE_FAMILY.md)** · **[VV32-A0](docs/ARCHITECTURE.md)** · **[VV64-A0](docs/VV64.md)** · **[Linux](docs/LINUX_PORT.md)** · **[日本語](docs/USAGE_JA.md)**
+**[Quick start](#quick-start)** · **[Family](docs/ARCHITECTURE_FAMILY.md)** · **[VV32-A0](docs/ARCHITECTURE.md)** · **[VV64-A0](docs/VV64.md)** · **[Tang 138K](docs/FPGA_138K_BRINGUP.md)** · **[Linux](docs/LINUX_PORT.md)** · **[日本語](docs/USAGE_JA.md)**
 
 </div>
 
 > [!IMPORTANT]
-> The working implementation is still `VV32-A0`. `VV64-A0` is a design draft, not a finished core, compiler target, or Linux port. Do not use this repository for production security or safety-critical control.
+> `VV32-A0` has an executable model and an RTL prototype. `VV64-A0` now has a synthesizable FPGA bring-up subset, not the complete architecture described in the design notes. There is still no compiler target, Linux port, released bitstream, or hardware validation.
 
 > **A processor may not declare victory until the checks pass and the state commits.**
 
 VICTORY-V is its own ISA. It is not a RISC-V extension, compatibility layer, or renamed third-party core.
 
-`VV32-A0` is the source architecture: fixed 32-bit instructions, capability-checked memory, Secret Tags, bounded Victory Regions, `VLOCK`, and a simple non-speculative core. `VV64-A0` carries those rules into a 64-bit general-purpose machine. The MMU is optional; page translation is a profile feature, not the definition of the CPU.
+`VV32-A0` is the source architecture: fixed 32-bit instructions, capability-checked memory, Secret Tags, bounded Victory Regions, `VLOCK`, and a simple non-speculative core. `VV64-A0` carries those rules into a 64-bit general-purpose machine. Page translation is optional and is not part of the first FPGA image.
 
 ## Architecture family
 
 | Profile | Purpose | MMU | State | First target |
 |---|---|---:|---|---|
-| `VV32-A0` | Small control and deterministic work | No | Model and RTL prototype | Tang Nano 20K |
-| `VV64-A0` | Native 64-bit general-purpose VICTORY-V | Optional | Architecture draft | Tang Console 138K |
-| `VV64-L0/flat` | Native 64-bit no-MMU Linux | No | Planned | Tang Console 138K |
-| `VV64-L0/paged` | Native 64-bit Linux with `V39` | Yes | Planned | Tang Console 138K |
+| `VV32-A0` | Small control and deterministic work | No | Model and RTL prototype | Tang Nano 20K / Tang 138K |
+| `VV64-A0` | Native 64-bit general-purpose VICTORY-V | Optional | FPGA bring-up subset | Tang Mega / Console 138K |
+| `VV64-L0/flat` | Native 64-bit no-MMU Linux | No | Planned | Tang 138K |
+| `VV64-L0/paged` | Native 64-bit Linux with `V39` | Yes | Planned | Later |
 
-The Linux profiles are configurations of `VV64-A0`, not separate instruction sets. The flat profile uses capability domains and an FDPIC or FLAT userspace. The paged profile adds conventional virtual mappings later.
+The Linux profiles are configurations of `VV64-A0`, not separate instruction sets. The flat profile comes first. `V39` remains a later profile.
 
 ## Rules inherited from VV32
 
@@ -54,37 +54,38 @@ The Linux profiles are configurations of `VV64-A0`, not separate instruction set
 | Optional translation | An MMU may remove access but cannot grant missing capability rights |
 | Quiet baseline | The first cores are in order and do not speculate into shared state |
 
-`VV64-A0` adds tagged context save/restore, a generation-checked Capability Directory, capability-checked atomics, sealed calls and protected returns, and `VTRYA` for abort-on-interrupt regions.
+The VV64 prototype keeps the base opcode positions, widens integer state to 64 bits, adds doubleword memory access, and moves full bounds and permissions into a protected Capability Directory.
 
 ## At a glance
 
 ```mermaid
 flowchart LR
-    A[VV32-A0 source architecture] --> C[Shared VICTORY-V contract]
-    C --> B[VV32 compact core]
-    C --> D[VV64-A0 native 64-bit core]
-    D --> F[VV64-L0 / flat\nno MMU]
-    D --> P[VV64-L0 / paged\nV39]
-    B --> N[Tang Nano 20K]
-    F --> T[Tang Console 138K]
-    P --> T
+    A[VV32-A0 source architecture] --> B[VV32 RTL core]
+    A --> C[VV64-A0 continuation]
+    C --> D[VV64 FPGA subset]
+    B --> S[Dual bring-up SoC]
+    D --> S
+    S --> M[Tang Mega 138K]
+    S --> N[Tang Console 138K]
+    D --> F[VV64-L0 / flat]
+    F --> P[V39 later]
 ```
 
 ## What works today
 
-The repository currently contains:
+The repository contains:
 
 - the executable `VV32-A0` instruction contract and machine-readable ISA manifest;
-- a dependency-free assembler, disassembler, and Python reference machine;
-- capability bounds and permission checks;
-- Secret Tags and forbidden secret-dependent control/address flow;
-- bounded Victory Regions with forwarding, commit, rollback, quotas, and budgets;
-- irreversible `VLOCK` root lockdown;
-- a board-independent SystemVerilog core and self-checking testbench;
-- a small formal harness;
-- a machine-readable family contract for `VV32-A0`, `VV64-A0`, and both Linux profiles.
+- a dependency-free VV32 assembler, disassembler, and Python reference machine;
+- capability bounds and permission checks, Secret Tags, Victory Regions, and `VLOCK`;
+- board-independent VV32 and VV64 SystemVerilog cores;
+- a VV64 Capability Directory with generation-checked register references;
+- self-checking simulations for VV32, VV64, and a dual-core bring-up image;
+- a shared UART, status mailbox, fixed boot ROM, and separate on-chip RAM for both cores;
+- Gowin projects and constraints for Tang Mega 138K and Tang Console 138K, device revisions B and C;
+- a small formal harness for VV32.
 
-There is no board bitstream, C compiler backend, 64-bit executable model, or Linux port yet. Design notes are marked as design notes rather than implementation.
+The VV64 FPGA subset does not yet implement privilege levels, tagged context spill/fill, atomics, sealed calls, `VTRYA`, caches, DDR3, an MMU, or Linux. Those items remain in the architecture contract and are not silently stubbed in the core.
 
 ## Quick start
 
@@ -115,8 +116,11 @@ Run the checks:
 make test
 make examples
 make family-check
+make fpga-check
 make rtl-test       # requires Icarus Verilog
 ```
+
+`make rtl-test` runs the existing VV32 test, the VV64 core test, and the VV32/VV64 co-resident SoC test.
 
 ## Victory Region example
 
@@ -142,40 +146,44 @@ A failed check, capability fault, secret-flow fault, explicit abort, exhausted s
 
 | Component | State |
 |---|---|
-| `VV32-A0` assembler and disassembler | Implemented and tested |
-| `VV32-A0` reference machine | Implemented and tested |
-| Capability, Secret Tag, Victory Region | Implemented in the model and RTL prototype |
+| `VV32-A0` assembler, disassembler, and model | Implemented and tested |
 | `VV32-A0` SystemVerilog core | Pre-FPGA prototype |
-| Model/RTL differential testing | Not finished |
-| Tang Nano 20K SoC and bitstream | Not started |
-| `VV64-A0` family and architecture contract | Drafted |
-| `VV64-A0` model and RTL | Not started |
+| `VV64-A0` base integer/control RTL | Implemented for bring-up |
+| VV64 capability directory and base memory checks | Implemented for bring-up |
+| VV64 Victory Regions and `VLOCK` | Implemented for bring-up |
+| VV32/VV64 Tang 138K image | Source and simulation present; hardware untested |
+| Gowin placement, timing, and bitstream | Not run in this repository yet |
+| DDR3, privilege, atomics, tagged context, sealed calls | Not implemented |
 | LLVM/Clang target | Not started |
 | Native Linux port | Not started |
 
-Passing the current tests means the covered model and RTL cases meet their local expectations. It is not a security certificate or a claim of silicon correctness.
+Passing the tests means the covered model and RTL cases meet their local expectations. It is not a security certificate or a claim of silicon correctness.
 
 ## Repository map
 
 ```text
 VICTORY-V/
-├── isa/                 VV32 instruction manifest and family contract
+├── isa/                 VV32 manifest and family contract
 ├── src/victory_v/       assembler, disassembler, model, family profiles
-├── tests/               executable checks
+├── tests/               executable Python checks
 ├── examples/            VV32 assembly programs
-├── rtl/                 board-independent VV32 SystemVerilog core
-├── formal/              initial bounded assertions
+├── rtl/                 VV32/VV64 cores, SoC, ROM, and testbenches
+├── fpga/tang-138k/      Gowin projects, board tops, constraints, timing
+├── formal/              initial VV32 bounded assertions
 ├── docs/                architecture, Linux, FPGA, and research notes
-└── tools/               manifest and RTL consistency checks
+└── tools/               manifest, ROM, and consistency checks
 ```
 
 ## Hardware direction
 
-`VV32-A0` remains the small-core track. Its first complete SoC is still intended for Tang Nano 20K.
+The first 138K image is deliberately small: two native VICTORY-V cores, separate on-chip RAM, one UART, status mailboxes, and LEDs. VV32 reports first, then VV64 is released. The UART should print:
 
-`VV64-A0` targets Tang Console 138K. Bring-up starts with a native VICTORY-V core, on-chip RAM, and UART. DDR3 and no-MMU Linux follow only after the 64-bit model, compiler, and RTL agree. LiteX may be used for board plumbing and DDR integration; it will not supply the CPU ISA.
+```text
+VV32-A0 ready
+VV64-A0 ready
+```
 
-The two cores may later share one 138K design, with VV32 handling short protected work while VV64 runs Linux. That is a later milestone, not a shortcut around native VV64.
+This is a bring-up image, not a scheduler or a Linux system. DDR3 stays out until clock, reset, UART, both cores, and the memory checks have been seen on the actual board. See [`docs/FPGA_138K_BRINGUP.md`](docs/FPGA_138K_BRINGUP.md).
 
 ## The name
 
