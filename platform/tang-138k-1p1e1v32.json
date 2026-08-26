@@ -1,0 +1,64 @@
+{
+  "schema": "victory-v.platform.v1",
+  "name": "Tang-138K-1P1E1V32",
+  "status": "rtl-bringup",
+  "clock_hz": 50000000,
+  "cores": [
+    {
+      "id": 0,
+      "architecture": "VV32-A0",
+      "implementation": "control",
+      "role": "monitor-io",
+      "private_ram_bytes": 65536,
+      "store_buffer_entries": 8
+    },
+    {
+      "id": 1,
+      "architecture": "VV64-A0",
+      "implementation": "P0",
+      "role": "linux-primary",
+      "private_ram_bytes": 65536,
+      "store_buffer_entries": 8,
+      "capability_directory_entries": 32
+    },
+    {
+      "id": 2,
+      "architecture": "VV64-A0",
+      "implementation": "E0",
+      "role": "linux-secondary",
+      "private_ram_bytes": 65536,
+      "store_buffer_entries": 2,
+      "capability_directory_entries": 8
+    }
+  ],
+  "boot_order": [0, 1, 2],
+  "memory": {
+    "local_ram_end": 65536,
+    "mmio_base": 65536,
+    "capability_root_end": 131072,
+    "external_ddr3": "not-connected"
+  },
+  "mmio": {
+    "uart_tx": 65536,
+    "mailbox_vv32": 65552,
+    "mailbox_p": 65560,
+    "mailbox_e": 65568,
+    "led": 65576,
+    "status": 65584,
+    "timebase": 65592,
+    "timer_compare_p": 65600,
+    "timer_compare_e": 65608,
+    "ipi_set": 65616,
+    "ipi_clear": 65624,
+    "core_info": 65632
+  },
+  "linux_target": {
+    "profile": "VV64-L0-flat",
+    "mmu": false,
+    "primary_core": 1,
+    "secondary_core": 2,
+    "control_core": 0,
+    "userspace": "FDPIC-or-FLAT",
+    "demo": "doomgeneric"
+  }
+}

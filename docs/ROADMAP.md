@@ -1,75 +1,130 @@
 # Roadmap
 
-`VV32-A0` remains the working source architecture. `VV64-A0` grows from it. The tracks stay separate so Linux work does not turn the small core into an oversized compromise.
+`VV32-A0` and `VV64-A0` are two permanent tracks. VV32 stays small. VV64 carries the general-purpose system and Linux.
 
-## Shared contract
+The Tang 138K target joins them as:
 
-**State: active**
+```text
+VV32-A0 control + VV64-P0 + VV64-E0
+```
 
-- keep the family manifest, Python profiles, documentation, and implementation declarations in sync;
-- finish generated model/RTL differential tests for `VV32-A0`;
-- review current RTL warnings;
-- run the formal harness in a pinned tool environment;
-- begin a Sail model before `VV64-A0` encoding freezes;
-- define one trace and conformance format for both widths.
+## R0 — Three-core board bring-up
 
-## VV32-A0 hardware
+**State: RTL and simulation present**
 
-**State: pre-FPGA RTL**
+- synthesize the 1P1E+VV32 image with Gowin;
+- record LUT, FF, BSRAM, DSP, Fmax, and the worst timing path;
+- program SRAM on Tang Mega or Console 138K;
+- capture the three UART lines in order;
+- repeat reset and release-failure tests;
+- keep the original two-core simulation as a regression.
 
-- close the current pre-hardware gate;
-- add Tang Nano 20K clock, reset, BSRAM, UART, timer, and interrupt wiring;
-- run identical binaries in the Python model, RTL simulation, and FPGA;
-- publish utilization, timing, tool versions, bitstream hash, and UART transcript;
-- consider tagged context memory only as a later VV32 profile.
+Exit condition:
 
-`VV32-A0` is complete when it is a small reproducible FPGA CPU, not when the 64-bit track starts.
+```text
+VV32-A0 ready
+VV64-P0 ready
+VV64-E0 ready
+```
 
-## VV64-A0 architecture
+with no core cause and the 50 MHz constraint passing.
 
-**State: design draft**
+## R1 — VV64 system instructions
 
-- freeze extension-page formats;
-- specify the Capability Directory and tagged context memory;
-- finish privilege, trap, atomic, and memory-ordering rules;
-- specify `VTRYA`, sealed calls, protected returns, and generations;
-- write an executable 64-bit model;
-- add a fast emulator for compiler and kernel testing;
-- implement a single-issue in-order SystemVerilog core;
-- test shared family invariants against both widths.
+**State: next**
 
-## VV64-L0/flat Linux
+- add Monitor, Supervisor, and User modes;
+- freeze trap and interrupt frames;
+- add syscall and return;
+- add atomics and fences;
+- add tagged capability save/restore;
+- add per-core interrupt mask and acknowledgement;
+- exercise timer and IPI on P0 and E0;
+- write the executable VV64 model and fast emulator.
+
+Exit condition: two VV64 cores run context, atomic, IPI, and migration tests in model and RTL.
+
+## R2 — DDR3 and shared memory
 
 **State: planned**
 
-- create the LLVM/Clang `victoryv64` target and relocations;
-- define the flat ABI and tagged context frame;
-- add an out-of-tree `arch/victoryv` port with `CONFIG_MMU=n`;
-- support FDPIC or FLAT loading;
-- boot an initramfs to a serial shell in the emulator;
-- run the same image on Tang Console 138K after DDR3 tests pass.
+- run the vendor DDR3 controller as a standalone destructive memory test;
+- connect P0 and E0 through a simple physical-memory fabric;
+- begin uncached or with one shared data cache;
+- add private instruction caches;
+- define DMA and framebuffer authority;
+- keep VV32 on a mailbox/control window rather than the Linux coherent domain.
 
-## VV64-L0/paged Linux
+Exit condition: both VV64 cores pass shared-memory stress on hardware.
 
-**State: planned after flat**
+## R3 — Toolchain
 
-- freeze the `V39` page-table format;
-- implement walks, TLBs, faults, and invalidation;
-- preserve tags through caches and aliases;
-- enable conventional ELF process mappings;
-- repeat compiler, kernel, emulator, and FPGA conformance tests.
+**State: planned**
 
-## Dual-core system
+- add the LLVM `victoryv64` backend;
+- add assembler, disassembler, relocations, and `lld` support;
+- define the no-MMU calling convention, TLS, and tagged context layout;
+- run compiler tests in the fast emulator;
+- bring up a small C library.
+
+Exit condition: freestanding C and a multi-threaded runtime pass in the emulator and FPGA test monitor.
+
+## R4 — VV64-L0/flat Linux
+
+**State: planned**
+
+- add out-of-tree `arch/victoryv` support;
+- boot P0 with `CONFIG_MMU=n`;
+- reach early console;
+- load initramfs;
+- run `/init` and BusyBox;
+- release E0 and pass SMP stress;
+- add the VV32 mailbox/watchdog driver.
+
+Exit condition: a repeatable serial shell with P0 and E0 online and VV32 reported as the control core.
+
+## R5 — Video, input, and DOOM
+
+**State: planned**
+
+- add DDR framebuffer scanout and HDMI timing;
+- add a Linux framebuffer driver;
+- bring up UART or keyboard input;
+- run `doomgeneric` in the emulator;
+- run it on P0 while E0 stays online;
+- use VV32 for watchdog and optional input service;
+- demonstrate recovery from a deliberate VV64 crash.
+
+Exit condition: a playable level over HDMI with recorded frame rate and complete build revisions.
+
+## R6 — P/E divergence
+
+**State: after Linux boots**
+
+- give P0 larger caches and faster multiply/divide;
+- give E0 smaller caches and iterative arithmetic;
+- keep ISA, ABI, traps, atomics, context, and memory ordering identical;
+- measure area, Fmax, and workload placement instead of naming cores by guesswork.
+
+## R7 — Optional V39
 
 **State: later**
 
-- place `VV32-A0` and `VV64-A0` on one 138K design only after each works alone;
-- give VV32 private on-chip memory and a narrow checked mailbox;
-- prevent Linux, DMA, and page tables from reaching VV32-private authority;
-- demonstrate a bounded protected service.
+- freeze the page-table format;
+- add page walks, TLBs, faults, and invalidation;
+- intersect page rights with capability and domain rights;
+- repeat the compiler, kernel, emulator, and FPGA tests.
 
-## Stable-profile evidence
+`V39` is an extension of the working no-MMU system, not a prerequisite for it.
 
-A stable profile needs generated conformance, model/RTL/FPGA differential traces, negative security tests, FPGA timing and resource results, compiler and kernel tests, and independent review.
+## VV32-A0 track
 
-The next implementation work is the VV32 differential gate and the first executable VV64 model.
+VV32 work continues in parallel:
+
+- Tang Nano 20K board integration;
+- model/RTL/FPGA differential traces;
+- timer and interrupt support;
+- formal checks in a pinned tool environment;
+- control-core mailbox and watchdog firmware for the 138K system.
+
+VV32 is complete when it is a reproducible small FPGA CPU and a useful control core.

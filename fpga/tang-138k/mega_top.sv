@@ -14,7 +14,7 @@ module top (
     .rst_ni (rst_ni)
   );
 
-  vv_dual_bringup #(
+  vv_cluster_bringup #(
     .CLK_HZ (50_000_000),
     .UART_BAUD (115_200)
   ) u_soc (
@@ -24,13 +24,18 @@ module top (
     .uart_tx_o (uart_tx),
     .led_o (status_led),
     .debug_mailbox32_o (),
-    .debug_mailbox64_o (),
+    .debug_mailbox_p_o (),
+    .debug_mailbox_e_o (),
     .debug_halted32_o (),
-    .debug_halted64_o (),
+    .debug_halted_p_o (),
+    .debug_halted_e_o (),
     .debug_cause32_o (),
-    .debug_cause64_o ()
+    .debug_cause_p_o (),
+    .debug_cause_e_o (),
+    .debug_p_released_o (),
+    .debug_e_released_o ()
   );
 
-  // The onboard V13 LED is active low. It stays on after both cores report.
-  assign led_V13 = ~(status_led[0] && status_led[1]);
+  // V13 is active low. It lights after all three boot mailboxes arrive.
+  assign led_V13 = ~(status_led[0] && status_led[1] && status_led[2]);
 endmodule

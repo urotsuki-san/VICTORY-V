@@ -2,50 +2,131 @@
 
 ## Target
 
-Linux is to run on a native `VV64-A0` processor. No RISC-V, Arm, or other host CPU is placed beside it and renamed VICTORY-V.
+Linux runs on native `VV64-A0`. No foreign host CPU sits beside it and gets renamed VICTORY-V.
 
-The first two system profiles are:
+The Tang 138K system has:
 
-- `VV64-L0/flat`: MMU disabled, capability domains, FDPIC or FLAT userspace;
-- `VV64-L0/paged`: optional `V39` translation and conventional ELF processes.
+```text
+VV64-P0  Linux boot CPU
+VV64-E0  Linux secondary CPU
+VV32-A0  monitor and control core
+```
 
-The flat profile comes first.
+P0 and E0 use the same ISA and userspace ABI. VV32 remains outside the Linux scheduler.
+
+The first Linux profile is `VV64-L0/flat`:
+
+```text
+CONFIG_MMU=n
+physical addressing
+capability domains
+FDPIC or FLAT userspace
+```
+
+`VV64-L0/paged` and `V39` come later.
 
 ## Why no-MMU comes first
 
-A 64-bit CPU does not require page translation. Linux supports no-MMU systems, but the normal ELF loader depends on `MMU`; no-MMU ports use FDPIC or FLAT-style executable formats and accept tighter process-model limits.
+The CPU does not need page translation to be 64-bit or to enforce authority. VICTORY-V checks capabilities and domains directly.
 
-The first useful milestone is therefore:
+Starting without an MMU removes the page walker, TLB, page-fault path, and virtual-memory debugging from the first kernel boot. It does not make Linux easy. The port still needs privilege, traps, atomics, tagged context, DDR, a compiler, a linker, and userspace support.
+
+The first useful stack is:
 
 ```text
-native VV64 core
-+ privilege and interrupts
-+ capability-aware compiler
+VV64-P0/E0
++ Monitor/Supervisor/User
++ atomics and fences
++ tagged context
++ timer and IPI
++ DDR3
++ LLVM/lld
 + no-MMU kernel
-+ FDPIC or FLAT init
-+ BusyBox over serial
++ initramfs
++ BusyBox
 ```
 
-This proves the CPU, compiler, tagged context, atomics, kernel entry, DDR, and drivers before a page walker is added to the same debug problem.
+## Core roles
+
+### P0
+
+P0 is the boot CPU. It handles early console, kernel initialization, interrupt setup, and the first user process. It is also the first DOOM target.
+
+### E0
+
+E0 starts from a release mailbox after P0 is ready. It must present the same architectural context, trap behaviour, atomics, and memory ordering as P0. Linux may schedule ordinary VV64 tasks on either core.
+
+The first P0/E0 wrappers only differ in Capability Directory and Victory Region buffer size. Cache and arithmetic differences come after the base SMP contract works.
+
+### VV32
+
+VV32 owns the narrow control plane:
+
+- initial reset sequencing;
+- watchdog;
+- board health and simple I/O;
+- crash mailbox;
+- optional VV64-cluster reset;
+- capability-domain setup before handoff.
+
+Linux talks to it through a small driver. It is not a third Linux CPU.
+
+## Hardware work still required
+
+The current cluster already wires boot mailboxes, a timebase, per-VV64 timer compares, IPI set/clear bits, core information, and a shared UART.
+
+Linux still requires:
+
+1. Monitor, Supervisor, and User modes;
+2. syscall and return instructions;
+3. complete trap and interrupt frames;
+4. tagged `CLDC`/`CSTC` context save and restore;
+5. compare/exchange, atomic RMW, and fences;
+6. per-core interrupt masking and acknowledgement;
+7. shared DDR3;
+8. a defined SMP memory model;
+9. instruction and data caches or a slow uncached first build;
+10. framebuffer, SD, and input drivers.
+
+A tagged capability must never be saved with an integer store.
+
+## Shared-memory bring-up
+
+Do not start with private coherent write-back caches.
+
+The first SMP kernel should use uncached shared DDR or one shared data cache. Private instruction caches are fine. Once both CPUs survive stress tests, private data caches and a coherence protocol can be added.
+
+The first tests should include:
+
+- atomic increment from both cores;
+- spinlock handoff;
+- IPI ping-pong;
+- timer interrupts on both cores;
+- context migration between P0 and E0;
+- stale Capability Directory generation rejection after migration;
+- repeated Victory Region aborts under interrupt load.
 
 ## Toolchain work
 
-The Python assembler is for architecture tests, not Linux builds. The native port needs:
+The Python assembler is a reference tool, not a Linux compiler.
+
+The native toolchain needs:
 
 1. an LLVM target, provisionally `victoryv64`;
 2. assembler and disassembler support for the extension pages;
 3. an ELF machine number and relocation set;
 4. `lld` support;
-5. a Clang target and compiler builtins;
-6. pointer lowering that preserves capability metadata;
-7. startup code and a C library for the flat ABI;
-8. debugger descriptions for values, tags, directory references, and secret state.
+5. Clang builtins and calling convention;
+6. capability-aware pointer lowering;
+7. TLS and per-CPU access;
+8. startup code and a no-MMU C library;
+9. debugger descriptions for values, tags, and directory references.
 
-A fast emulator should be added before kernel work. The Python model remains the readable reference; the faster implementation handles compiler tests and full boots.
+A fast emulator comes before the kernel. The Python model remains the readable reference; the faster emulator runs compiler suites and full boots.
 
-## Kernel port
+## Kernel tree
 
-The out-of-tree kernel port will use:
+The out-of-tree port will use:
 
 ```text
 arch/victoryv/
@@ -58,55 +139,51 @@ arch/victoryv/
 └── mm/
 ```
 
-The first port covers reset entry, traps, timer, interrupts, syscalls, user copy, tagged context and signal frames, atomics, fences, device tree, early serial, no-MMU process setup, and FDPIC or FLAT loading.
-
-A tagged capability must not be saved with an integer store. Context and signal frames use the `CLDC` and `CSTC` path.
+The first port covers reset entry, traps, timer, IPI, SMP bring-up, syscalls, user copy, tagged context and signal frames, atomics, fences, device tree, early serial, no-MMU process setup, and FDPIC or FLAT loading.
 
 ## Flat process model
 
-Each process receives a domain plus initial capabilities for code, data, stack, and kernel entry. FDPIC is a useful fit because its load segments may be placed independently in physical memory.
+Each process receives a domain and initial capabilities for code, data, stack, and kernel entry. FDPIC is attractive because load segments may be placed independently in physical memory.
 
-A context switch changes the active domain and restores tagged registers. A process cannot reach another process by guessing its physical address.
-
-This is not virtual memory. It does not provide demand paging, copy-on-write fork, overcommit, or arbitrary sparse mappings. The target is a small, honest no-MMU Linux rather than a claim that every desktop assumption survives unchanged.
-
-## Paged profile
-
-`VV64-L0/paged` adds `V39`, TLB fill and invalidation, page faults, standard ELF loading, shared libraries, and conventional process mappings.
-
-Page rights are intersected with capability and domain rights. Supervisor cannot use a page table to grant authority that Monitor never delegated.
+This does not provide demand paging, copy-on-write fork, overcommit, or arbitrary sparse mappings. The goal is a small no-MMU Linux that says exactly what it supports.
 
 ## Boot sequence
 
 ```text
-reset ROM
-  -> VICTORY monitor
+reset
+  -> VV32 monitor
+  -> release P0
   -> create roots and domains
   -> VLOCK
-  -> load kernel and device tree
-  -> enter Supervisor
+  -> initialize DDR3
+  -> load kernel, initramfs, and device tree
+  -> enter Supervisor on P0
   -> Linux early console
-  -> initramfs
+  -> release E0
+  -> SMP online
   -> /init
+  -> BusyBox shell
 ```
 
-There is no borrowed SBI or foreign firmware ABI. The monitor interface will be a small VICTORY-V contract for timer, reset, console handoff, and domain setup.
+There is no borrowed SBI. The monitor ABI is a small VICTORY-V contract for reset, timer handoff, console handoff, and domain setup.
 
-## Tang Console 138K stages
+## Milestones
 
-1. Run the same bare-metal corpus in the 64-bit model and RTL.
-2. Boot a native core from on-chip RAM and print over UART.
-3. Add timer, interrupts, tagged context switching, and directory-generation tests.
-4. Add DDR3 and pass destructive memory tests before enabling caches.
-5. Reach `start_kernel()` and early console with `CONFIG_MMU=n`.
-6. Add FDPIC or FLAT userspace and reach a BusyBox shell.
-7. Add `V39` and repeat the boot in the paged profile.
-8. Only then consider placing `VV32-A0` beside the Linux core.
-
-LiteX may supply board descriptions, interconnect, and DDR plumbing. The CPU, ISA, privilege model, monitor ABI, compiler target, and Linux architecture port remain VICTORY-V work.
+```text
+L0  P0 prints from BRAM
+L1  P0 enters Supervisor and handles a timer interrupt
+L2  atomics, tagged context, and user entry pass in the emulator
+L3  DDR3 passes destructive tests on hardware
+L4  start_kernel() reaches early console with CONFIG_MMU=n
+L5  initramfs runs /init
+L6  BusyBox shell over serial
+L7  E0 comes online and passes SMP stress
+L8  framebuffer and input drivers work
+L9  doomgeneric runs on P0 while E0 remains online
+```
 
 ## Public success criteria
 
-A Linux claim should include exact revisions for VICTORY-V, compiler, linker, kernel, and root filesystem; emulator and FPGA transcripts; resource use and clock; DDR test results; a serial login identifying `victoryv64`; and negative tests for forged capabilities, stale generations, secret branches, and failed Victory Regions.
+A Linux claim should include exact revisions for VICTORY-V, compiler, linker, kernel, and root filesystem; emulator and FPGA logs; resource use and clock; DDR test results; a serial login identifying `victoryv64`; both VV64 cores online; the VV32 control driver; and negative tests for forged capabilities, stale generations, secret branches, and failed Victory Regions.
 
-Until then the status is planned or in progress, not Linux-capable.
+Until those logs exist, the status remains planned or in progress.

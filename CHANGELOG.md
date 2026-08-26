@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0-alpha.0 — 2026-08-26
+
+- Added the Tang 138K `1P1E + VV32` bring-up image.
+- Kept P0 and E0 on the same `VV64-A0` ISA while giving them different Capability Directory and Victory Region budgets.
+- Added a fixed VV32 -> P0 -> E0 release chain, three boot mailboxes, and three UART messages.
+- Added a shared timebase, per-VV64 timer compares, software interrupt bits, and per-requester core information.
+- Added the three-core self-checking simulation and kept the original two-core regression.
+- Switched the Mega and Console Gowin projects to the three-core SoC.
+- Added a machine-readable Tang 138K platform manifest.
+- Fixed the no-MMU Linux and DOOM path around P0, E0, and the permanent VV32 control core.
+
 ## 0.3.0-alpha.0 — 2026-08-26
 
 - Added a native 64-bit SystemVerilog core for the first `VV64-A0` FPGA subset.

@@ -11,11 +11,14 @@ VV32-A0
    ├── compact FPGA and deterministic control work
    └── shared architectural contract
             └── VV64-A0
+                    ├── P0 / E0 implementation profiles
                     ├── VV64-L0/flat   no page translation
                     └── VV64-L0/paged  V39 later
 ```
 
-The machine-readable copy is [`isa/victory-v-family.json`](../isa/victory-v-family.json). `vv profiles` prints the same data.
+P0 and E0 are not new ISAs. They execute the same `VV64-A0` binaries with different hardware budgets.
+
+The machine-readable architecture copy is [`isa/victory-v-family.json`](../isa/victory-v-family.json). The Tang 138K system copy is [`platform/tang-138k-1p1e1v32.json`](../platform/tang-138k-1p1e1v32.json).
 
 ## Family rules
 
@@ -96,8 +99,10 @@ The full architecture will add domain, object type, and sealing state. Reusing a
 ## Implementation tracks
 
 - `VV32-A0` remains the compact track and still targets Tang Nano 20K.
-- `VV64-A0` is a separate native core, not a widened build flag on VV32.
-- The Tang 138K bring-up image instantiates both cores with separate RAM and one shared UART/status page.
-- Co-residence currently proves wiring and independent execution only. It does not imply coherent shared memory or a completed heterogeneous runtime.
+- `VV64-A0` is a separate native architecture, not a widened build flag on VV32.
+- P0 and E0 share the VV64 ISA and ABI. The first wrappers differ in Capability Directory and Victory Region buffer size.
+- The Tang 138K image instantiates VV32, P0, and E0 with private RAM and a shared UART/control page.
+- VV32 remains the monitor and control core. It is not a Linux LITTLE core.
+- Co-residence currently proves wiring and boot order only. It does not imply coherent shared memory or completed SMP Linux.
 
-See [`VV64.md`](VV64.md), [`LINUX_PORT.md`](LINUX_PORT.md), [`FPGA_HANDOFF.md`](FPGA_HANDOFF.md), and [`FPGA_138K_BRINGUP.md`](FPGA_138K_BRINGUP.md).
+See [`VV64.md`](VV64.md), [`HETEROGENEOUS_CLUSTER.md`](HETEROGENEOUS_CLUSTER.md), [`LINUX_PORT.md`](LINUX_PORT.md), [`FPGA_HANDOFF.md`](FPGA_HANDOFF.md), and [`FPGA_138K_BRINGUP.md`](FPGA_138K_BRINGUP.md).

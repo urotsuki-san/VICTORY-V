@@ -2,7 +2,7 @@ PYTHON ?= python3
 IVERILOG ?= iverilog
 VVP ?= vvp
 
-.PHONY: install test examples family-check fpga-rom fpga-check rtl-test rtl-test-vv32 rtl-test-vv64 rtl-test-dual check clean
+.PHONY: install test examples family-check fpga-rom fpga-check rtl-test rtl-test-vv32 rtl-test-vv64 rtl-test-dual rtl-test-cluster check clean
 
 install:
 	$(PYTHON) -m pip install -e .
@@ -50,7 +50,17 @@ rtl-test-dual:
 		rtl/tb/vv_dual_bringup_tb.sv
 	$(VVP) rtl/build/vv_dual_bringup_tb.vvp
 
-rtl-test: rtl-test-vv32 rtl-test-vv64 rtl-test-dual
+rtl-test-cluster:
+	mkdir -p rtl/build
+	$(IVERILOG) -g2012 -Wall -Wno-timescale -Irtl -s vv_cluster_bringup_tb -o rtl/build/vv_cluster_bringup_tb.vvp \
+		rtl/vv32_pkg.sv rtl/vv32_core.sv \
+		rtl/vv64_pkg.sv rtl/vv64_core.sv rtl/vv64_profiled_core.sv \
+		rtl/common/vv_uart_tx.sv rtl/common/vv_sram.sv \
+		rtl/boot/vv_bringup_rom.sv rtl/soc/vv_cluster_bringup.sv \
+		rtl/tb/vv_cluster_bringup_tb.sv
+	$(VVP) rtl/build/vv_cluster_bringup_tb.vvp
+
+rtl-test: rtl-test-vv32 rtl-test-vv64 rtl-test-dual rtl-test-cluster
 
 check: test examples family-check fpga-check rtl-test
 	PYTHONPATH=src $(PYTHON) tools/check_isa_sync.py
