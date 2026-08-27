@@ -1,46 +1,43 @@
 #!/usr/bin/env python3
-"""Check that the JSON family contract matches the Python profiles."""
+"""Verify the Python family profiles against the machine-readable manifest."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
-from victory_v.family import (  # noqa: E402
+from victory_v.family import (
     ARCHITECTURES,
+    DECISION_ENGINES,
     FAMILY_NAME,
-    FAMILY_RULES,
     INSTRUCTION_WIDTH_BITS,
     SOURCE_ARCHITECTURE,
     SYSTEM_PROFILES,
+    VRTU_PROFILES,
+    validate_family,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def fail(message: str) -> None:
-    print(f"family manifest error: {message}", file=sys.stderr)
-    raise SystemExit(1)
+    raise SystemExit(f"family manifest error: {message}")
 
 
-def main() -> int:
+def main() -> None:
+    validate_family()
     manifest = json.loads((ROOT / "isa" / "victory-v-family.json").read_text(encoding="utf-8"))
-    if manifest.get("family") != FAMILY_NAME:
-        fail("family name differs from Python")
-    if manifest.get("source_architecture") != SOURCE_ARCHITECTURE:
-        fail("source architecture differs from Python")
-    if int(manifest.get("instruction_width_bits", 0)) != INSTRUCTION_WIDTH_BITS:
-        fail("instruction width differs from Python")
-    if set(manifest.get("family_rules", [])) != set(FAMILY_RULES):
-        fail("family rules differ from Python")
+    if manifest["family"] != FAMILY_NAME:
+        fail("family name differs")
+    if manifest["source_architecture"] != SOURCE_ARCHITECTURE:
+        fail("source architecture differs")
+    if manifest["instruction_width_bits"] != INSTRUCTION_WIDTH_BITS:
+        fail("instruction width differs")
 
-    json_architectures = manifest.get("architectures", {})
-    if set(json_architectures) != set(ARCHITECTURES):
-        fail("architecture names differ from Python")
     for name, profile in ARCHITECTURES.items():
-        entry = json_architectures[name]
+        entry = manifest["architectures"].get(name)
+        if entry is None:
+            fail(f"missing architecture {name}")
         expected = {
             "status": profile.status,
             "xlen": profile.xlen,
@@ -48,42 +45,50 @@ def main() -> int:
             "translation": profile.translation,
             "inherits": profile.inherits,
             "hardware_target": profile.hardware_target,
-            "required_rules": set(profile.required_rules),
         }
-        actual = {
-            "status": entry.get("status"),
-            "xlen": int(entry.get("xlen", 0)),
-            "address_bits": int(entry.get("address_bits", 0)),
-            "translation": entry.get("translation"),
-            "inherits": entry.get("inherits"),
-            "hardware_target": entry.get("hardware_target"),
-            "required_rules": set(entry.get("required_rules", [])),
-        }
-        if actual != expected:
-            fail(f"architecture entry differs for {name}\nJSON={actual}\nPython={expected}")
+        for key, value in expected.items():
+            if entry.get(key) != value:
+                fail(f"{name}.{key}: {entry.get(key)!r} != {value!r}")
+        if set(entry["required_rules"]) != set(profile.required_rules):
+            fail(f"{name}: required rules differ")
 
-    json_system = manifest.get("system_profiles", {})
-    if set(json_system) != set(SYSTEM_PROFILES):
-        fail("system-profile names differ from Python")
     for name, profile in SYSTEM_PROFILES.items():
-        entry = json_system[name]
-        expected = {
+        entry = manifest["system_profiles"].get(name)
+        if entry is None:
+            fail(f"missing system profile {name}")
+        for key, value in {
             "architecture": profile.architecture,
             "status": profile.status,
             "mmu": profile.mmu,
+            "protection": profile.protection,
             "userspace_abi": profile.userspace_abi,
             "virtual_address_bits": profile.virtual_address_bits,
-        }
-        actual = {key: entry.get(key) for key in expected}
-        if actual != expected:
-            fail(f"system profile differs for {name}\nJSON={actual}\nPython={expected}")
+        }.items():
+            if entry.get(key) != value:
+                fail(f"{name}.{key}: {entry.get(key)!r} != {value!r}")
 
-    print(
-        f"family manifest synchronized: {len(ARCHITECTURES)} architectures, "
-        f"{len(SYSTEM_PROFILES)} system profiles"
-    )
-    return 0
+    for name, profile in VRTU_PROFILES.items():
+        entry = manifest["vrtu_profiles"].get(name)
+        if entry is None:
+            fail(f"missing VRTU profile {name}")
+        expected = {
+            "entries": profile.entries,
+            "address_bits": profile.address_bits,
+            "software_refill": profile.software_refill,
+            "page_walker": profile.page_walker,
+            "locked_reset_map": profile.locked_reset_map,
+        }
+        if entry != expected:
+            fail(f"{name}: VRTU profile differs")
+
+    experiment = manifest.get("experiments", {}).get("EUCLID-experiment", {})
+    if experiment.get("default_fpga_image") is not False or experiment.get("default_rtl_test") is not False:
+        fail("Euclid experiment leaked into the default image or regression")
+    if list(DECISION_ENGINES) != ["EUCLID-experiment"]:
+        fail("unexpected decision-engine profile")
+
+    print("family manifest matches Python profiles, VRTU profiles, and experiment isolation")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

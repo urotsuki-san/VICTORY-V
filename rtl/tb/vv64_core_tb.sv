@@ -14,6 +14,8 @@ module vv64_core_tb;
   logic [63:0] dmem_addr;
   logic [63:0] dmem_wdata;
   logic [7:0] dmem_wstrb;
+  logic dmem_probe;
+  logic [3:0] dmem_size;
   logic [63:0] dmem_rdata;
   logic dmem_ready;
   logic halted;
@@ -75,13 +77,19 @@ module vv64_core_tb;
     .imem_addr_o (imem_addr),
     .imem_rdata_i (imem_rdata),
     .imem_ready_i (imem_ready),
+    .imem_fault_i (1'b0),
+    .imem_fault_cause_i (16'd0),
     .dmem_req_o (dmem_req),
     .dmem_we_o (dmem_we),
     .dmem_addr_o (dmem_addr),
     .dmem_wdata_o (dmem_wdata),
     .dmem_wstrb_o (dmem_wstrb),
+    .dmem_probe_o (dmem_probe),
+    .dmem_size_o (dmem_size),
     .dmem_rdata_i (dmem_rdata),
     .dmem_ready_i (dmem_ready),
+    .dmem_fault_i (1'b0),
+    .dmem_fault_cause_i (16'd0),
     .irq_i (1'b0),
     .halted_o (halted),
     .debug_pc_o (debug_pc),
@@ -100,7 +108,7 @@ module vv64_core_tb;
   assign dmem_rdata = memory[dmem_addr[7:3]];
 
   always_ff @(posedge clk) begin
-    if (dmem_req && dmem_we && dmem_ready) begin
+    if (dmem_req && !dmem_probe && dmem_we && dmem_ready) begin
       for (byte_index = 0; byte_index < 8; byte_index = byte_index + 1) begin
         if (dmem_wstrb[byte_index])
           memory[dmem_addr[7:3]][byte_index*8 +: 8] <= dmem_wdata[byte_index*8 +: 8];
@@ -156,6 +164,8 @@ module vv64_core_tb;
       $fatal(1, "VV64 core did not halt");
     if (memory[0][31:0] !== 32'd2)
       $fatal(1, "rollback failed: memory=%h", memory[0]);
+    if (dut.regs_q[3] !== 64'd2 || dut.regs_q[5] !== 64'd1)
+      $fatal(1, "aborted VV64 register writes were not restored");
     if (debug_cause !== 64'd0)
       $fatal(1, "unexpected trap cause: %h", debug_cause);
     if (debug_error !== 64'h0000_0000_0000_1234)
@@ -166,6 +176,9 @@ module vv64_core_tb;
       $fatal(1, "region remained active after abort");
     if (debug_cap_alloc == 0)
       $fatal(1, "capability directory was not used");
+
+    if (dmem_size > 4'd8)
+      $fatal(1, "invalid logical memory size: %0d", dmem_size);
 
     $display("VV64 CORE PASS cycles=%0d pc=%h", cycle_count, debug_pc);
     $finish;

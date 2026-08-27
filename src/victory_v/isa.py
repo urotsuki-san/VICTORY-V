@@ -14,6 +14,7 @@ WORD_BYTES: Final[int] = 4
 REGISTER_COUNT: Final[int] = 32
 LINK_REGISTER: Final[int] = 31
 DEFAULT_REGION_STORE_DEPTH: Final[int] = 8
+DEFAULT_REGION_REGISTER_DEPTH: Final[int] = 31
 DEFAULT_REGION_INSTRUCTION_LIMIT: Final[int] = 255
 
 
@@ -95,6 +96,10 @@ class Opcode(IntEnum):
     VERR = 0x34
     WFI = 0x35
 
+    VPREP = 0x3C
+    VTRYC = 0x3D
+    VCANCEL = 0x3E
+
 
 class CapabilityPermission(IntFlag):
     READ = 0x01
@@ -115,6 +120,10 @@ class Csr(IntEnum):
     VERROR = 0x0007
     VREGION_COUNT = 0x0008
     VREGION_LIMIT = 0x0009
+    VCAP_ALLOC = 0x000A
+    VCONTRACT = 0x000B
+    VRELEASE = 0x000C
+    VREGION_CAPS = 0x000D
 
 
 class Cause(IntEnum):
@@ -135,6 +144,21 @@ class Cause(IntEnum):
     DATA_ALIGNMENT = 14
     MEMORY_RANGE = 15
     REGION_REQUIRED = 16
+    REGION_REG_QUOTA = 17
+    REGION_DEADLINE = 18
+    REGION_PREEMPTED = 19
+    VRTU_MISS = 20
+    VRTU_PERMISSION = 21
+    VRTU_CONFLICT = 22
+    CAPABILITY_STALE = 23
+    CONTRACT_TOKEN = 24
+    CONTRACT_ADMISSION = 25
+    REGION_ARENA = 26
+    REGION_DEVICE = 27
+    REGION_CAP_QUOTA = 28
+    COMMIT_PROTOCOL = 29
+    CAPABILITY_GENERATION_WRAP = 30
+    VRTU_CONFIGURATION = 31
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,6 +223,9 @@ _SPECS = [
     InstructionSpec("vabt", Opcode.VABT, Format.I, "Explicitly abort a Victory Region"),
     InstructionSpec("verr", Opcode.VERR, Format.R, "Read the last Victory error"),
     InstructionSpec("wfi", Opcode.WFI, Format.NONE, "Wait for interrupt"),
+    InstructionSpec("vprep", Opcode.VPREP, Format.R, "Admit a one-shot Victory Contract"),
+    InstructionSpec("vtry.c", Opcode.VTRYC, Format.B, "Enter a Victory Region with a prepared contract"),
+    InstructionSpec("vcancel", Opcode.VCANCEL, Format.R, "Cancel an unused contract token"),
 ]
 
 SPECS_BY_MNEMONIC: Final[dict[str, InstructionSpec]] = {spec.mnemonic: spec for spec in _SPECS}
@@ -300,7 +327,7 @@ def decode(word: int) -> DecodedInstruction:
         opcode = Opcode(raw_opcode)
     except ValueError as exc:
         raise ValueError(f"unknown opcode 0x{raw_opcode:02x}") from exc
-    branch_rs1 = (word >> 21) & 0x1F if opcode in {Opcode.BRZ, Opcode.BRNZ} else (word >> 16) & 0x1F
+    branch_rs1 = (word >> 21) & 0x1F if opcode in {Opcode.BRZ, Opcode.BRNZ, Opcode.VTRYC} else (word >> 16) & 0x1F
     return DecodedInstruction(
         word=word,
         opcode=opcode,

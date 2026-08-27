@@ -2,9 +2,9 @@
 
 ## Status
 
-`VV32-A0` is the first executable VICTORY-V architecture and the source of the family. It is small enough for a low-cost FPGA and remains a standalone target after `VV64-A0` begins.
+`VV32-A0` is the first executable VICTORY-V architecture and the source of the family. It is small enough for a low-cost FPGA and remains a useful target after `VV64-A0` arrives.
 
-A0 is an alpha contract. Opcode positions are fixed for this release, but incompatible changes remain possible before a stable profile.
+A0 is still alpha. Opcode positions are fixed for this revision, not forever.
 
 When sources disagree, use this order:
 
@@ -13,7 +13,7 @@ When sources disagree, use this order:
 3. the Python model for covered operational details;
 4. RTL where a differential or conformance test checks the behavior.
 
-A mismatch is a defect. An implementation does not redefine the ISA silently.
+A mismatch is a defect. An implementation does not get to redefine the ISA silently.
 
 The family relationship is documented in [`ARCHITECTURE_FAMILY.md`](ARCHITECTURE_FAMILY.md).
 
@@ -26,7 +26,7 @@ The family relationship is documented in [`ARCHITECTURE_FAMILY.md`](ARCHITECTURE
 | Program counter | 32 bits, four-byte aligned |
 | Registers | 32 × 32 bits |
 | Data address width | 32 bits |
-| Register metadata | capability state and one secret bit |
+| Register metadata | capability state, one secret bit, contract token generation |
 | Execution | single-issue, in order, multi-cycle |
 | Speculation | none |
 | Memory consistency | one core, program order |
@@ -43,22 +43,23 @@ Each register contains:
 value[31:0]
 capability { valid, base[31:0], top[31:0], permissions[4:0] }
 secret
+contract_token_generation[31:0]
 ```
 
-`rN`, `vN`, `cN`, and `sN` name the same physical state. The prefix only states intent.
+`rN`, `vN`, `cN`, and `sN` name the same physical state. The prefix states intent.
 
 `r0` is always zero, untagged, and public. Writes to it are discarded.
 
 ### Metadata propagation
 
-- `MOV` copies value, capability, and secret state.
-- Integer-producing instructions clear the destination capability.
+- `MOV` copies value, capability, secret state, and contract-token state.
+- Integer-producing instructions clear the destination capability and contract-token state.
 - Arithmetic and comparisons propagate secret state from their operands.
-- Capability-producing instructions clear the destination secret bit.
+- Capability-producing instructions clear the destination secret bit and contract-token state.
 - A load through an `S` capability marks the result secret.
 - `VDECLASS` is the only A0 instruction that clears a secret tag while preserving a value.
 
-A0 cannot yet spill a capability to memory. Ordinary stores lose authority metadata. This is acceptable for the first bare-metal core and blocks a general task-switch ABI. `VV64-A0` addresses it with tagged context memory; a later VV32 profile may adopt the same mechanism without silently changing A0.
+A0 cannot yet spill a capability to memory. Ordinary stores lose authority metadata. That is sufficient for the first bare-metal core, but not for a general task-switch ABI. `VV64-A0` is intended to gain tagged context memory first; a later VV32 profile may use the same format without silently changing A0.
 
 ## Capabilities
 
@@ -102,27 +103,42 @@ A secret controlling value causes `SECRET_FLOW` for branches, indirect targets, 
 
 ## Victory Regions
 
-A region begins with:
+`VTRY` is the architectural entry into a Victory Region. A0 exposes two encodings for it.
+
+The direct form carries a compact contract in the instruction itself:
 
 ```asm
-vtry failure_target, store_quota, instruction_budget
+vtry   failure_target, stores, instruction_budget
 ```
 
-Stores enter a bounded buffer and are not sent to external memory. Loads see the newest overlapping buffered bytes. `VIC` emits the stores in program order and closes the region.
+It is the shortest path for small jobs and remains a first-class part of the ISA.
 
-A false `VCHK`, explicit `VABT`, capability or secret fault, quota or budget failure, prohibited irreversible instruction, or nested `VTRY` aborts the region. Abort discards stores, records `VERROR`, scrubs secret registers, and jumps to the failure target.
+The prepared form separates admission from entry:
 
-Ordinary registers and non-secret capabilities are not rolled back. The failure target is a recovery boundary, not a full snapshot restore point.
+```asm
+vprep  cToken, cArena, rSpec
+vtry   cToken, failure_target
+```
 
-A0 does not define transactional MMIO. A future SoC must reject it inside a region or use a device protocol that participates in commit.
+`VPREP` checks the requested store granules, instruction budget, distinct register writes, derived-capability allocations, arena, and optional release cycle before work begins. It does not enter the Region. The second `VTRY` consumes the token and reaches the same checkpoint as the direct form. The two machine encodings are named `VTRY.I` and `VTRY.C`; the model and RTL call the prepared opcode `VTRYC`.
 
-External interrupts are deferred while a region or its commit is active. The encoded instruction budget bounds execution and the store quota bounds commit transactions. A hard wall-clock claim also requires bounded memories.
+A copied token does not duplicate authority. Consuming or cancelling one copy makes every copy stale. `VCANCEL` exists for work that was admitted but never started.
 
-`VV64-A0` adds `VTRYA`, which aborts on interrupt instead of deferring it. The inherited `VTRY` behavior remains unchanged.
+Both entry forms snapshot integer values, capability metadata, secret metadata, contract-token metadata, and the failure path. VV64 also snapshots its Capability Directory and allocator. `CBOUNDS` and `CPERM` may derive capabilities inside a prepared Region while the admitted allocation quota remains. `CROOT` is prohibited inside any Region.
+
+Prepared work is also arena-bound. Every contracted load and store must stay inside `cArena`. Requests that do not fit the selected P0/E0 profile fail at `VPREP`; they do not wait until the Region is half finished.
+
+Stores merge by aligned memory granule. Repeated byte, halfword, word, or doubleword writes to one granule consume one write-set entry, and loads see the newest buffered bytes. Device ranges are rejected while a Region is active.
+
+A false `VCHK`, explicit `VABT`, capability or secret fault, arena escape, quota or budget failure, prohibited irreversible instruction, nested entry, or accepted interrupt aborts the Region. Abort discards the write set and restores the entry snapshot before control reaches the failure path. `VERROR`, the failure PC, counters, and an accepted interrupt are the named failure record and are not rolled back.
+
+`VIC` has two phases. `ST_PREFLIGHT` probes every buffered entry through the normal protection path without writing memory. Publication starts only after all entries pass address, permission, range, and device checks. Once publication starts, interrupts wait for the short commit sequence. A bus fault after that point is `COMMIT_PROTOCOL`; the core stops instead of pretending an already visible write disappeared.
+
+A fixed-release contract holds success or failure until the admitted cycle. Secret contracts require fixed release. This closes the architectural early-finish signal; it says nothing about power, electromagnetic leakage, or contention outside the core.
 
 ## Traps and CSRs
 
-Outside a region, a fault records `VEPC`, `VCAUSE`, and `VBADADDR`, disables interrupts, and transfers to `VTVEC`.
+Outside a Region, a fault records `VEPC`, `VCAUSE`, and `VBADADDR`, disables interrupts, and transfers to `VTVEC`.
 
 The host runner stops when `VTVEC` is zero. That is a debugging policy, not a different architectural rule. CSR addresses and causes are listed in [`ISA.md`](ISA.md).
 
@@ -131,6 +147,14 @@ The host runner stops when `VTVEC` is zero. That is a debugging policy, not a di
 A0 avoids caches, dynamic branch prediction, speculation, and out-of-order issue. That reduces hidden state; it does not prove a worst-case execution time.
 
 The current RTL is multi-cycle. Fetch depends on `imem_ready_i`; memory and commit depend on `dmem_ready_i`. A timing profile must bind those interfaces and publish cycle limits before the project claims hard real-time behavior.
+
+## Current Tang 138K system
+
+VV32 coexists with `VV64-P0` and `VV64-E0` in the Tang 138K source image. Both VV64 profiles pass instruction and data traffic through VRTU. This does not change the VV32 instruction encoding.
+
+VV32 remains the control and monitor CPU, and the natural budget root. The checked-in ROM runs direct `VTRY` commit, prepared `VTRY` commit, and rollback before a core announces itself. The VV64 ROMs also expect Region access to the device window to fail. The retired Euclid block is isolated under `experiments/euclid/` and is not part of the board image.
+
+VRTU is a VV64 implementation component; it does not silently redefine `VV32-A0`.
 
 ## Evidence labels
 

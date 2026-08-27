@@ -1,61 +1,65 @@
-# VICTORY-V 日本語ガイド
+# VICTORY-V 使用メモ
 
-## 現在地
-
-動いているのは32ビットの`VV32-A0`です。アセンブラ、逆アセンブラ、Python参照モデル、SystemVerilogコア、テストベンチまで入っています。FPGA用bitstreamはまだありません。
-
-64ビットの`VV64-A0`は別のCPUへ乗り換える計画ではありません。Capability、Secret Tag、Victory Region、`VLOCK`、非投機の基本方針を`VV32-A0`から継承し、Linuxに必要な特権、Atomic、Context保存、任意のMMUを追加します。
+## 現在の構成
 
 ```text
-VV32-A0          実装中。小型FPGA向け
-VV64-A0          設計中。ネイティブ64ビットVICTORY-V
-VV64-L0/flat     MMUなしLinux。最初のLinux目標
-VV64-L0/paged    V39 MMUありLinux。その次
+VV32-A0       監視・制御
+VV64-P0       主コア + 4エントリ VRTU
+VV64-E0       小型コア + 2エントリ VRTU
 ```
 
-Linuxを別のRISC-Vコアで動かす話ではありません。
+標準のTang 138KイメージにEuclidコアは入りません。旧コードは`experiments/euclid/`へ隔離されています。
 
-## セットアップ
+## VTRYとVictory Region
+
+Regionを始める命令は`VTRY`です。オペランド数で二つの符号化を選びます。
+
+```text
+VTRY fail, stores, budget   小さな契約をその場で宣言して開始する
+VPREP cToken, cArena, rSpec 詳細な契約を事前審査する
+VTRY cToken, fail           準備済みトークンを消費して開始する
+VCANCEL cToken              使わないトークンを失効させる
+```
+
+仕様上の呼び分けは`VTRY.I`と`VTRY.C`です。アセンブラはどちらも`vtry`で受け付け、明示したい場合だけ`vtry.c`も使えます。`VPREP`は審査だけを行い、Regionは開始しません。
+
+Tang 138KのROMは、各コアで直接`VTRY`のcommit、準備済み`VTRY`のcommit、abortによるrollbackを確認してから`VTRY ready`を出します。P0/E0はRegionからMMIOへ書けないことも確認します。
+
+## 検査
 
 ```bash
-git clone https://github.com/urotsuki-san/VICTORY-V.git
-cd VICTORY-V
 python -m pip install -e .
-vv profiles
-```
-
-## VV32-A0を動かす
-
-```bash
-vv asm examples/victory.vs -o build/victory.vbin
-vv run examples/victory.vs --trace --registers
-```
-
-Victory Region内の書き込みは`VIC`まで外へ出ません。Capability違反、Secret Flow違反、`VCHK`失敗、Store数超過、命令数超過が起きると、書き込みを捨てて失敗先へ移ります。
-
-## テスト
-
-```bash
 make test
 make examples
 make family-check
-make rtl-test       # Icarus Verilogが必要
+make fpga-check
+make fpga-handoff-check
+make docs-check
+make rtl-test
 ```
+
+Icarus Verilogがない環境では、Pythonと静的検査だけを先に実行できます。
+
+## VRTU
+
+VRTUは少数の連続範囲を正確に変換・保護します。
+
+```text
+一致なし      cause 20
+権限不足      cause 21
+複数範囲一致  cause 22
+```
+
+ソフトウェアTLB補充もページテーブルウォーカーもありません。初期状態ではRAMとMMIOを恒等変換し、P0/E0の命令・データアクセスを検査します。Region中のMMIOはdevice faultになります。
 
 ## FPGA
 
-`VV32-A0`の最初の対象はTang Nano 20Kです。ここは小型CPUとして完成させます。
+実機では基板とB/Cリビジョンに合う`.gprj`を開き、50 MHz制約で合成と配置配線を行います。期待するUARTは次の3行です。
 
-`VV64-A0`はTang Console 138Kを対象にします。順番は、On-chip RAMとUART、割り込み、Tagged Context、DDR3、MMUなしLinux、最後にV39 MMUです。
+```text
+VV32-A0 VTRY ready
+VV64-P0 VTRY ready
+VV64-E0 VTRY ready
+```
 
-LiteXを使う場合も、利用するのはBoard定義やDDR周りです。CPU本体とISAはVICTORY-Vです。
-
-## まだできないこと
-
-- FPGA実機起動
-- C/C++コンパイル
-- 64ビット命令の実行
-- Linux起動
-- Capabilityを保ったTask切り替え
-
-設計中の機能と実装済みの機能はREADMEの表で分けています。
+合成結果、Fmax、LUT/FF/BSRAM、UART実測が揃うまでは実機成功とは扱いません。

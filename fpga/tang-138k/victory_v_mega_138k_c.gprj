@@ -10,6 +10,7 @@
         <File path="../../rtl/vv64_pkg.sv" type="file.verilog" enable="1"/>
         <File path="../../rtl/vv64_core.sv" type="file.verilog" enable="1"/>
         <File path="../../rtl/vv64_profiled_core.sv" type="file.verilog" enable="1"/>
+        <File path="../../rtl/memory/vv_vrtu.sv" type="file.verilog" enable="1"/>
         <File path="../../rtl/common/vv_reset_sync.sv" type="file.verilog" enable="1"/>
         <File path="../../rtl/common/vv_uart_tx.sv" type="file.verilog" enable="1"/>
         <File path="../../rtl/common/vv_sram.sv" type="file.verilog" enable="1"/>

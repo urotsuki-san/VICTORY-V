@@ -9,7 +9,7 @@ import sys
 from .assembler import assemble_file, words_from_bytes
 from .disassembler import disassemble
 from .errors import VictoryError
-from .family import ARCHITECTURES, SYSTEM_PROFILES
+from .family import ARCHITECTURES, DECISION_ENGINES, SYSTEM_PROFILES, VRTU_PROFILES
 from .machine import Machine, MachineConfig
 
 
@@ -64,21 +64,27 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_profiles(_args: argparse.Namespace) -> int:
-    rows: list[tuple[str, str, str, str, str]] = []
+    rows: list[tuple[str, str, str, str, str, str]] = []
     for profile in ARCHITECTURES.values():
-        rows.append((profile.name, str(profile.xlen), profile.translation, profile.status, profile.hardware_target))
+        rows.append(("CPU", profile.name, str(profile.xlen), profile.translation, profile.status, profile.hardware_target))
     for profile in SYSTEM_PROFILES.values():
+        architecture = ARCHITECTURES[profile.architecture]
         rows.append(
             (
+                "SYSTEM",
                 profile.name,
-                str(ARCHITECTURES[profile.architecture].xlen),
+                str(architecture.xlen),
                 "required" if profile.mmu else "none",
                 profile.status,
-                ARCHITECTURES[profile.architecture].hardware_target,
+                architecture.hardware_target,
             )
         )
+    for profile in VRTU_PROFILES.values():
+        rows.append(("VRTU", profile.name, "-", f"{profile.entries} exact ranges", "rtl-alpha", "Tang 138K"))
+    for profile in DECISION_ENGINES.values():
+        rows.append(("EXPERIMENT", profile.name, "-", "-", profile.status, profile.hardware_target))
 
-    headings = ("PROFILE", "XLEN", "TRANSLATION", "STATUS", "TARGET")
+    headings = ("KIND", "PROFILE", "XLEN", "TRANSLATION", "STATUS", "TARGET")
     widths = [max(len(headings[index]), *(len(row[index]) for row in rows)) for index in range(len(headings))]
     print("  ".join(headings[index].ljust(widths[index]) for index in range(len(headings))))
     print("  ".join("-" * width for width in widths))
@@ -111,7 +117,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--registers", action="store_true")
     run.set_defaults(func=_cmd_run)
 
-    profiles = subparsers.add_parser("profiles", help="show implemented and planned family profiles")
+    profiles = subparsers.add_parser("profiles", help="show CPU, system, and decision-engine profiles")
     profiles.set_defaults(func=_cmd_profiles)
     return parser
 

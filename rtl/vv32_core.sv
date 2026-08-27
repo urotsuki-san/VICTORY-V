@@ -3,7 +3,10 @@
 module vv32_core #(
   parameter logic [31:0] RESET_PC = 32'h0000_0000,
   parameter integer DATA_MEMORY_BYTES = 65536,
-  parameter integer STORE_BUFFER_DEPTH = 8
+  parameter integer STORE_BUFFER_DEPTH = 8,
+  parameter integer MAX_CONTRACT_CAP_ALLOCS = 8,
+  parameter logic [31:0] DEVICE_BASE = 32'h0001_0000,
+  parameter logic [31:0] DEVICE_TOP = 32'h0002_0000
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
@@ -43,6 +46,18 @@ module vv32_core #(
   logic [31:0] cap_top_q [0:31];
   logic [4:0]  cap_perm_q [0:31];
   logic        secret_q [0:31];
+  logic [31:0] contract_token_tag_q [0:31];
+
+  // A0 uses a whole-bank architectural checkpoint.  It is deliberately
+  // simple and constant-time; a compact dirty-register log is a later
+  // area optimisation, not a semantic dependency.
+  logic [31:0] region_regs_q [0:31];
+  logic        region_cap_valid_q [0:31];
+  logic [31:0] region_cap_base_q [0:31];
+  logic [31:0] region_cap_top_q [0:31];
+  logic [4:0]  region_cap_perm_q [0:31];
+  logic        region_secret_q [0:31];
+  logic [31:0] region_contract_token_tag_q [0:31];
 
   logic        interrupt_enable_q;
   logic        root_locked_q;
@@ -59,12 +74,42 @@ module vv32_core #(
   logic [4:0]  region_store_quota_q;
   logic [7:0]  region_budget_q;
   logic [7:0]  region_used_q;
+  logic [4:0]  region_register_quota_q;
+  logic [4:0]  region_register_count_q;
+  logic [31:0] region_register_dirty_q;
+  logic [4:0]  region_cap_quota_q;
+  logic [4:0]  region_cap_used_q;
+  logic        region_arena_valid_q;
+  logic [31:0] region_arena_base_q;
+  logic [31:0] region_arena_top_q;
+  logic        region_fixed_release_q;
+  logic        region_secret_mode_q;
+  logic [31:0] region_release_cycle_q;
+
+  logic        contract_valid_q;
+  logic [31:0] contract_generation_q;
+  logic [4:0]  contract_store_quota_q;
+  logic [7:0]  contract_budget_q;
+  logic [4:0]  contract_register_quota_q;
+  logic [4:0]  contract_cap_quota_q;
+  logic        contract_fixed_release_q;
+  logic        contract_secret_mode_q;
+  logic [6:0]  contract_release_delta_q;
+  logic [31:0] contract_arena_base_q;
+  logic [31:0] contract_arena_top_q;
+  logic [4:0]  contract_arena_perm_q;
+
+  logic        release_abort_q;
+  logic        release_interrupt_q;
+  logic [31:0] release_error_q;
+  logic [31:0] release_cycle_q;
 
   logic [31:0] sb_addr_q [0:STORE_BUFFER_DEPTH-1];
   logic [31:0] sb_data_q [0:STORE_BUFFER_DEPTH-1];
   logic [3:0]  sb_strb_q [0:STORE_BUFFER_DEPTH-1];
   logic [5:0]  sb_count_q;
   logic [5:0]  commit_index_q;
+  logic [5:0]  preflight_index_q;
 
   logic [4:0]  mem_rd_q;
   logic [31:0] mem_addr_q;
@@ -102,6 +147,11 @@ module vv32_core #(
   logic [3:0]  temp_strb;
   logic [31:0] temp_store_data;
   logic        temp_signed;
+  logic        temp_merge_found;
+  integer      temp_merge_index;
+  integer      temp_byte_index;
+  logic [31:0] temp_contract_spec;
+  logic [31:0] temp_contract_generation;
 
   function automatic logic [31:0] sext16(input logic [15:0] value);
     sext16 = {{16{value[15]}}, value};
@@ -121,6 +171,37 @@ module vv32_core #(
 
   function automatic logic [31:0] signext21_words(input logic signed [20:0] value);
     signext21_words = {{9{value[20]}}, value, 2'b00};
+  endfunction
+
+  function automatic logic contract_token_live(input logic [4:0] register_index);
+    contract_token_live = contract_valid_q &&
+                          (contract_token_tag_q[register_index] != 32'd0) &&
+                          (contract_token_tag_q[register_index] == contract_generation_q);
+  endfunction
+
+  function automatic logic opcode_writes_rd(input logic [5:0] opcode);
+    begin
+      case (opcode)
+        OP_MOV, OP_MOVI, OP_LUI, OP_ADD, OP_ADDI, OP_SUB, OP_MUL,
+        OP_AND, OP_ANDI, OP_OR, OP_ORI, OP_XOR, OP_XORI,
+        OP_SHL, OP_SHR, OP_SAR, OP_CMPEQ, OP_CMPLT, OP_CMPULT,
+        OP_JAL, OP_JALR, OP_CSRR,
+        OP_CROOT, OP_CBOUNDS, OP_CPERM, OP_CINC,
+        OP_CGETTAG, OP_CGETPERM,
+        OP_CLDB, OP_CLDBU, OP_CLDH, OP_CLDHU, OP_CLDW,
+        OP_VDECLASS, OP_VERR, OP_VPREP:
+          opcode_writes_rd = 1'b1;
+        default:
+          opcode_writes_rd = 1'b0;
+      endcase
+    end
+  endfunction
+
+  function automatic logic is_device_range(
+    input logic [31:0] address,
+    input logic [31:0] end_address
+  );
+    is_device_range = (address < DEVICE_TOP) && (DEVICE_BASE < end_address);
   endfunction
 
   function automatic logic [3:0] store_strobe(
@@ -183,6 +264,10 @@ module vv32_core #(
         CSR_VERROR:        csr_read = verror_q;
         CSR_VREGION_COUNT: csr_read = {26'd0, sb_count_q};
         CSR_VREGION_LIMIT: csr_read = {24'd0, region_budget_q};
+        CSR_VCAP_ALLOC:    csr_read = 32'd0;
+        CSR_VCONTRACT:     csr_read = contract_valid_q ? contract_generation_q : 32'd0;
+        CSR_VRELEASE:      csr_read = (state_q == ST_RELEASE) ? release_cycle_q : region_release_cycle_q;
+        CSR_VREGION_CAPS:  csr_read = {22'd0, region_cap_quota_q, region_cap_used_q};
         default:           csr_read = 32'd0;
       endcase
     end
@@ -201,6 +286,7 @@ module vv32_core #(
         cap_top_q[destination] <= 32'd0;
         cap_perm_q[destination] <= 5'd0;
         secret_q[destination] <= secret_value;
+        contract_token_tag_q[destination] <= 32'd0;
       end
     end
   endtask
@@ -217,6 +303,7 @@ module vv32_core #(
         cap_top_q[destination] <= cap_top_q[source];
         cap_perm_q[destination] <= cap_perm_q[source];
         secret_q[destination] <= secret_q[source];
+        contract_token_tag_q[destination] <= contract_token_tag_q[source];
       end
     end
   endtask
@@ -236,6 +323,7 @@ module vv32_core #(
         cap_top_q[destination] <= top;
         cap_perm_q[destination] <= permissions;
         secret_q[destination] <= 1'b0;
+        contract_token_tag_q[destination] <= 32'd0;
       end
     end
   endtask
@@ -251,23 +339,97 @@ module vv32_core #(
           cap_top_q[index] <= 32'd0;
           cap_perm_q[index] <= 5'd0;
           secret_q[index] <= 1'b0;
+          contract_token_tag_q[index] <= 32'd0;
         end
       end
     end
   endtask
 
-  task automatic abort_region(input logic [31:0] error_code);
+  task automatic snapshot_region_state;
+    integer index;
+    begin
+      for (index = 0; index < 32; index = index + 1) begin
+        region_regs_q[index] <= regs_q[index];
+        region_cap_valid_q[index] <= cap_valid_q[index];
+        region_cap_base_q[index] <= cap_base_q[index];
+        region_cap_top_q[index] <= cap_top_q[index];
+        region_cap_perm_q[index] <= cap_perm_q[index];
+        region_secret_q[index] <= secret_q[index];
+        region_contract_token_tag_q[index] <= contract_token_tag_q[index];
+      end
+    end
+  endtask
+
+  task automatic restore_region_state;
+    integer index;
+    begin
+      for (index = 0; index < 32; index = index + 1) begin
+        regs_q[index] <= region_regs_q[index];
+        cap_valid_q[index] <= region_cap_valid_q[index];
+        cap_base_q[index] <= region_cap_base_q[index];
+        cap_top_q[index] <= region_cap_top_q[index];
+        cap_perm_q[index] <= region_cap_perm_q[index];
+        secret_q[index] <= region_secret_q[index];
+        contract_token_tag_q[index] <= region_contract_token_tag_q[index];
+      end
+    end
+  endtask
+
+  task automatic clear_region_bookkeeping;
     begin
       region_active_q <= 1'b0;
       region_store_quota_q <= 5'd0;
       region_budget_q <= 8'd0;
       region_used_q <= 8'd0;
+      region_register_quota_q <= 5'd0;
+      region_register_count_q <= 5'd0;
+      region_register_dirty_q <= 32'd0;
+      region_cap_quota_q <= 5'd0;
+      region_cap_used_q <= 5'd0;
+      region_arena_valid_q <= 1'b0;
+      region_arena_base_q <= 32'd0;
+      region_arena_top_q <= 32'd0;
+      region_fixed_release_q <= 1'b0;
+      region_secret_mode_q <= 1'b0;
+      region_release_cycle_q <= 32'd0;
       sb_count_q <= 6'd0;
       commit_index_q <= 6'd0;
-      verror_q <= error_code;
-      pc_q <= region_fail_pc_q;
+      preflight_index_q <= 6'd0;
+    end
+  endtask
+
+  task automatic finish_region_commit;
+    begin
+      clear_region_bookkeeping();
+      release_abort_q <= 1'b0;
+      release_interrupt_q <= 1'b0;
+      release_error_q <= 32'd0;
+      release_cycle_q <= 32'd0;
+      verror_q <= 32'd0;
       state_q <= ST_FETCH;
-      scrub_secrets();
+    end
+  endtask
+
+  task automatic abort_region(input logic [31:0] error_code);
+    begin
+      restore_region_state();
+      if (region_fixed_release_q && (cycle_q < region_release_cycle_q)) begin
+        release_abort_q <= 1'b1;
+        release_interrupt_q <= 1'b0;
+        release_error_q <= error_code;
+        release_cycle_q <= region_release_cycle_q;
+        clear_region_bookkeeping();
+        state_q <= ST_RELEASE;
+      end else begin
+        clear_region_bookkeeping();
+        release_abort_q <= 1'b0;
+        release_interrupt_q <= 1'b0;
+        release_error_q <= 32'd0;
+        release_cycle_q <= 32'd0;
+        verror_q <= error_code;
+        pc_q <= region_fail_pc_q;
+        state_q <= ST_FETCH;
+      end
     end
   endtask
 
@@ -354,8 +516,36 @@ module vv32_core #(
       region_store_quota_q <= 5'd0;
       region_budget_q <= 8'd0;
       region_used_q <= 8'd0;
+      region_register_quota_q <= 5'd0;
+      region_register_count_q <= 5'd0;
+      region_register_dirty_q <= 32'd0;
+      region_cap_quota_q <= 5'd0;
+      region_cap_used_q <= 5'd0;
+      region_arena_valid_q <= 1'b0;
+      region_arena_base_q <= 32'd0;
+      region_arena_top_q <= 32'd0;
+      region_fixed_release_q <= 1'b0;
+      region_secret_mode_q <= 1'b0;
+      region_release_cycle_q <= 32'd0;
+      contract_valid_q <= 1'b0;
+      contract_generation_q <= 32'd0;
+      contract_store_quota_q <= 5'd0;
+      contract_budget_q <= 8'd0;
+      contract_register_quota_q <= 5'd0;
+      contract_cap_quota_q <= 5'd0;
+      contract_fixed_release_q <= 1'b0;
+      contract_secret_mode_q <= 1'b0;
+      contract_release_delta_q <= 7'd0;
+      contract_arena_base_q <= 32'd0;
+      contract_arena_top_q <= 32'd0;
+      contract_arena_perm_q <= 5'd0;
+      release_abort_q <= 1'b0;
+      release_interrupt_q <= 1'b0;
+      release_error_q <= 32'd0;
+      release_cycle_q <= 32'd0;
       sb_count_q <= 6'd0;
       commit_index_q <= 6'd0;
+      preflight_index_q <= 6'd0;
       mem_rd_q <= 5'd0;
       mem_addr_q <= 32'd0;
       mem_size_q <= 2'd0;
@@ -370,6 +560,14 @@ module vv32_core #(
         cap_top_q[i] <= 32'd0;
         cap_perm_q[i] <= 5'd0;
         secret_q[i] <= 1'b0;
+        contract_token_tag_q[i] <= 32'd0;
+        region_regs_q[i] <= 32'd0;
+        region_cap_valid_q[i] <= 1'b0;
+        region_cap_base_q[i] <= 32'd0;
+        region_cap_top_q[i] <= 32'd0;
+        region_cap_perm_q[i] <= 5'd0;
+        region_secret_q[i] <= 1'b0;
+        region_contract_token_tag_q[i] <= 32'd0;
       end
       for (i = 0; i < STORE_BUFFER_DEPTH; i = i + 1) begin
         sb_addr_q[i] <= 32'd0;
@@ -381,13 +579,32 @@ module vv32_core #(
 
       case (state_q)
         ST_FETCH: begin
-          if (irq_i && interrupt_enable_q && !region_active_q) begin
+          if (irq_i && interrupt_enable_q) begin
             instruction_pc_q <= pc_q;
             vcause_q <= {16'd0, CAUSE_INTERRUPT};
             vbadaddr_q <= 32'd0;
-            vepc_q <= pc_q;
             interrupt_enable_q <= 1'b0;
-            pc_q <= vtvec_q;
+            if (region_active_q) begin
+              restore_region_state();
+              vepc_q <= region_fail_pc_q;
+              if (region_fixed_release_q && (cycle_q < region_release_cycle_q)) begin
+                release_abort_q <= 1'b1;
+                release_interrupt_q <= 1'b1;
+                release_error_q <= {16'd0, CAUSE_REGION_PREEMPTED};
+                release_cycle_q <= region_release_cycle_q;
+                clear_region_bookkeeping();
+                state_q <= ST_RELEASE;
+              end else begin
+                clear_region_bookkeeping();
+                verror_q <= {16'd0, CAUSE_REGION_PREEMPTED};
+                pc_q <= vtvec_q;
+                state_q <= ST_FETCH;
+              end
+            end else begin
+              vepc_q <= pc_q;
+              pc_q <= vtvec_q;
+              state_q <= ST_FETCH;
+            end
           end else if (region_active_q && (region_used_q >= region_budget_q)) begin
             abort_region({16'd0, CAUSE_REGION_BUDGET});
           end else if (imem_ready_i) begin
@@ -401,7 +618,17 @@ module vv32_core #(
 
         ST_EXEC: begin
           instret_q <= instret_q + 32'd1;
-          case (opcode_w)
+          if (region_active_q && opcode_writes_rd(opcode_w) &&
+              (rd_w != 5'd0) && !region_register_dirty_q[rd_w] &&
+              (region_register_count_q >= region_register_quota_q)) begin
+            abort_region({16'd0, CAUSE_REGION_REG_QUOTA});
+          end else begin
+            if (region_active_q && opcode_writes_rd(opcode_w) &&
+                (rd_w != 5'd0) && !region_register_dirty_q[rd_w]) begin
+              region_register_dirty_q[rd_w] <= 1'b1;
+              region_register_count_q <= region_register_count_q + 5'd1;
+            end
+            case (opcode_w)
             OP_NOP: state_q <= ST_FETCH;
 
             OP_MOV: begin
@@ -565,7 +792,9 @@ module vv32_core #(
 
             OP_CROOT: begin
               temp_sum = {1'b0, regs_q[rs1_w]} + {1'b0, regs_q[rs2_w]};
-              if (root_locked_q) begin
+              if (region_active_q) begin
+                abort_region({16'd0, CAUSE_REGION_REQUIRED});
+              end else if (root_locked_q) begin
                 fault({16'd0, CAUSE_ROOT_LOCKED}, 32'd0);
               end else if (secret_q[rs1_w] || secret_q[rs2_w]) begin
                 fault({16'd0, CAUSE_SECRET_FLOW}, 32'd0);
@@ -584,8 +813,12 @@ module vv32_core #(
                 fault({16'd0, CAUSE_SECRET_FLOW}, 32'd0);
               end else if (temp_sum[32] || (regs_q[rs1_w] < cap_base_q[rs1_w]) || (temp_sum[31:0] > cap_top_q[rs1_w])) begin
                 fault({16'd0, CAUSE_CAPABILITY_BOUNDS}, regs_q[rs1_w]);
+              end else if (region_active_q && (region_cap_used_q >= region_cap_quota_q)) begin
+                abort_region({16'd0, CAUSE_REGION_CAP_QUOTA});
               end else begin
                 write_capability(rd_w, regs_q[rs1_w], regs_q[rs1_w], temp_sum[31:0], cap_perm_q[rs1_w]);
+                if (region_active_q)
+                  region_cap_used_q <= region_cap_used_q + 5'd1;
                 state_q <= ST_FETCH;
               end
             end
@@ -594,8 +827,12 @@ module vv32_core #(
                 fault({16'd0, CAUSE_CAPABILITY_TAG}, 32'd0);
               end else if (secret_q[rs1_w] || secret_q[rs2_w]) begin
                 fault({16'd0, CAUSE_SECRET_FLOW}, 32'd0);
+              end else if (region_active_q && (region_cap_used_q >= region_cap_quota_q)) begin
+                abort_region({16'd0, CAUSE_REGION_CAP_QUOTA});
               end else begin
                 write_capability(rd_w, regs_q[rs1_w], cap_base_q[rs1_w], cap_top_q[rs1_w], cap_perm_q[rs1_w] & regs_q[rs2_w][4:0]);
+                if (region_active_q)
+                  region_cap_used_q <= region_cap_used_q + 5'd1;
                 state_q <= ST_FETCH;
               end
             end
@@ -647,6 +884,11 @@ module vv32_core #(
               end else if (temp_sum[32] || (temp_address < cap_base_q[rs1_w]) || (temp_end > cap_top_q[rs1_w]) ||
                            (temp_end > DATA_MEMORY_BYTES)) begin
                 fault({16'd0, CAUSE_CAPABILITY_BOUNDS}, temp_address);
+              end else if (region_active_q && region_arena_valid_q &&
+                           ((temp_address < region_arena_base_q) || (temp_end > region_arena_top_q))) begin
+                abort_region({16'd0, CAUSE_REGION_ARENA});
+              end else if (region_active_q && is_device_range(temp_address, temp_end)) begin
+                abort_region({16'd0, CAUSE_REGION_DEVICE});
               end else if (((temp_size == 2'd1) && temp_address[0]) || ((temp_size == 2'd2) && (temp_address[1:0] != 2'b00))) begin
                 fault({16'd0, CAUSE_DATA_ALIGNMENT}, temp_address);
               end else if ((opcode_w >= OP_CSTB) && secret_q[rd_w] && ((cap_perm_q[rs1_w] & CAP_S) == 0)) begin
@@ -662,7 +904,22 @@ module vv32_core #(
                 temp_strb = store_strobe(temp_size, temp_address[1:0]);
                 temp_store_data = store_data(regs_q[rd_w], temp_size, temp_address[1:0]);
                 if (region_active_q) begin
-                  if ((sb_count_q >= region_store_quota_q) || (sb_count_q >= STORE_BUFFER_DEPTH)) begin
+                  temp_merge_found = 1'b0;
+                  temp_merge_index = 0;
+                  for (i = 0; i < STORE_BUFFER_DEPTH; i = i + 1) begin
+                    if ((i < sb_count_q) && (sb_addr_q[i] == {temp_address[31:2], 2'b00})) begin
+                      temp_merge_found = 1'b1;
+                      temp_merge_index = i;
+                    end
+                  end
+                  if (temp_merge_found) begin
+                    for (temp_byte_index = 0; temp_byte_index < 4; temp_byte_index = temp_byte_index + 1) begin
+                      if (temp_strb[temp_byte_index])
+                        sb_data_q[temp_merge_index][temp_byte_index*8 +: 8] <= temp_store_data[temp_byte_index*8 +: 8];
+                    end
+                    sb_strb_q[temp_merge_index] <= sb_strb_q[temp_merge_index] | temp_strb;
+                    state_q <= ST_FETCH;
+                  end else if ((sb_count_q >= region_store_quota_q) || (sb_count_q >= STORE_BUFFER_DEPTH)) begin
                     abort_region({16'd0, CAUSE_REGION_STORE_QUOTA});
                   end else begin
                     sb_addr_q[sb_count_q] <= {temp_address[31:2], 2'b00};
@@ -696,16 +953,126 @@ module vv32_core #(
             OP_VTRY: begin
               if (region_active_q) begin
                 abort_region({16'd0, CAUSE_REGION_NESTED});
-              end else if ((vtry_stores_w == 5'd0) || (vtry_stores_w > STORE_BUFFER_DEPTH) || (vtry_budget_w == 8'd0)) begin
+              end else if ((vtry_stores_w == 5'd0) ||
+                           (vtry_stores_w > STORE_BUFFER_DEPTH) ||
+                           (vtry_budget_w == 8'd0)) begin
                 fault({16'd0, CAUSE_REGION_STORE_QUOTA}, 32'd0);
               end else begin
+                snapshot_region_state();
                 region_active_q <= 1'b1;
                 region_fail_pc_q <= instruction_pc_q + 32'd4 + signext13_words(vtry_off13_w);
                 region_store_quota_q <= vtry_stores_w;
                 region_budget_q <= vtry_budget_w;
                 region_used_q <= 8'd0;
+                region_register_quota_q <= 5'd31;
+                region_register_count_q <= 5'd0;
+                region_register_dirty_q <= 32'd0;
+                region_cap_quota_q <= 5'd0;
+                region_cap_used_q <= 5'd0;
+                region_arena_valid_q <= 1'b0;
+                region_arena_base_q <= 32'd0;
+                region_arena_top_q <= 32'd0;
+                region_fixed_release_q <= 1'b0;
+                region_secret_mode_q <= 1'b0;
+                region_release_cycle_q <= 32'd0;
                 sb_count_q <= 6'd0;
+                commit_index_q <= 6'd0;
+                preflight_index_q <= 6'd0;
+                release_abort_q <= 1'b0;
+                release_interrupt_q <= 1'b0;
+                release_error_q <= 32'd0;
                 verror_q <= 32'd0;
+                state_q <= ST_FETCH;
+              end
+            end
+            OP_VPREP: begin
+              temp_contract_spec = regs_q[rs2_w];
+              temp_contract_generation = contract_generation_q + 32'd1;
+              if (region_active_q) begin
+                abort_region({16'd0, CAUSE_REGION_REQUIRED});
+              end else if ((rd_w == 5'd0) || contract_valid_q || (aux_w != 11'd0)) begin
+                fault({16'd0, CAUSE_CONTRACT_ADMISSION}, 32'd0);
+              end else if (secret_q[rs1_w] || secret_q[rs2_w]) begin
+                fault({16'd0, CAUSE_SECRET_FLOW}, 32'd0);
+              end else if (!cap_valid_q[rs1_w]) begin
+                fault({16'd0, CAUSE_CAPABILITY_TAG}, regs_q[rs1_w]);
+              end else if ((temp_contract_spec[4:0] == 5'd0) ||
+                           (temp_contract_spec[4:0] > STORE_BUFFER_DEPTH) ||
+                           (temp_contract_spec[12:5] == 8'd0) ||
+                           (temp_contract_spec[17:13] == 5'd0) ||
+                           (temp_contract_spec[17:13] > 5'd31) ||
+                           (temp_contract_spec[22:18] > MAX_CONTRACT_CAP_ALLOCS) ||
+                           (temp_contract_spec[23] && (temp_contract_spec[31:25] == 7'd0)) ||
+                           (temp_contract_spec[24] && !temp_contract_spec[23]) ||
+                           (temp_contract_spec[24] && ((cap_perm_q[rs1_w] & CAP_S) == 0)) ||
+                           ((cap_perm_q[rs1_w] & (CAP_R | CAP_W)) == 0) ||
+                           (temp_contract_generation == 32'd0)) begin
+                fault({16'd0, CAUSE_CONTRACT_ADMISSION}, regs_q[rs2_w]);
+              end else begin
+                contract_valid_q <= 1'b1;
+                contract_generation_q <= temp_contract_generation;
+                contract_store_quota_q <= temp_contract_spec[4:0];
+                contract_budget_q <= temp_contract_spec[12:5];
+                contract_register_quota_q <= temp_contract_spec[17:13];
+                contract_cap_quota_q <= temp_contract_spec[22:18];
+                contract_fixed_release_q <= temp_contract_spec[23];
+                contract_secret_mode_q <= temp_contract_spec[24];
+                contract_release_delta_q <= temp_contract_spec[31:25];
+                contract_arena_base_q <= cap_base_q[rs1_w];
+                contract_arena_top_q <= cap_top_q[rs1_w];
+                contract_arena_perm_q <= cap_perm_q[rs1_w];
+                regs_q[rd_w] <= temp_contract_generation;
+                cap_valid_q[rd_w] <= 1'b0;
+                cap_base_q[rd_w] <= 32'd0;
+                cap_top_q[rd_w] <= 32'd0;
+                cap_perm_q[rd_w] <= 5'd0;
+                secret_q[rd_w] <= 1'b0;
+                contract_token_tag_q[rd_w] <= temp_contract_generation;
+                state_q <= ST_FETCH;
+              end
+            end
+            OP_VTRYC: begin
+              if (region_active_q) begin
+                abort_region({16'd0, CAUSE_REGION_NESTED});
+              end else if (!contract_token_live(branch_rs1_w)) begin
+                fault({16'd0, CAUSE_CONTRACT_TOKEN}, regs_q[branch_rs1_w]);
+              end else begin
+                snapshot_region_state();
+                contract_valid_q <= 1'b0;
+                region_active_q <= 1'b1;
+                region_fail_pc_q <= instruction_pc_q + 32'd4 + signext21_words(off21_w);
+                region_store_quota_q <= contract_store_quota_q;
+                region_budget_q <= contract_budget_q;
+                region_used_q <= 8'd0;
+                region_register_quota_q <= contract_register_quota_q;
+                region_register_count_q <= 5'd0;
+                region_register_dirty_q <= 32'd0;
+                region_cap_quota_q <= contract_cap_quota_q;
+                region_cap_used_q <= 5'd0;
+                region_arena_valid_q <= 1'b1;
+                region_arena_base_q <= contract_arena_base_q;
+                region_arena_top_q <= contract_arena_top_q;
+                region_fixed_release_q <= contract_fixed_release_q;
+                region_secret_mode_q <= contract_secret_mode_q;
+                region_release_cycle_q <= cycle_q + {25'd0, contract_release_delta_q};
+                sb_count_q <= 6'd0;
+                commit_index_q <= 6'd0;
+                preflight_index_q <= 6'd0;
+                release_abort_q <= 1'b0;
+                release_interrupt_q <= 1'b0;
+                release_error_q <= 32'd0;
+                verror_q <= 32'd0;
+                state_q <= ST_FETCH;
+              end
+            end
+            OP_VCANCEL: begin
+              if (region_active_q) begin
+                abort_region({16'd0, CAUSE_REGION_REQUIRED});
+              end else if (!contract_token_live(rs1_w)) begin
+                fault({16'd0, CAUSE_CONTRACT_TOKEN}, regs_q[rs1_w]);
+              end else begin
+                contract_valid_q <= 1'b0;
+                contract_token_tag_q[rs1_w] <= 32'd0;
                 state_q <= ST_FETCH;
               end
             end
@@ -723,16 +1090,17 @@ module vv32_core #(
             OP_VIC: begin
               if (!region_active_q) begin
                 fault({16'd0, CAUSE_REGION_REQUIRED}, 32'd0);
+              end else if (region_fixed_release_q && (cycle_q < region_release_cycle_q)) begin
+                release_abort_q <= 1'b0;
+                release_interrupt_q <= 1'b0;
+                release_error_q <= 32'd0;
+                release_cycle_q <= region_release_cycle_q;
+                state_q <= ST_RELEASE;
               end else if (sb_count_q == 0) begin
-                region_active_q <= 1'b0;
-                region_store_quota_q <= 5'd0;
-                region_budget_q <= 8'd0;
-                region_used_q <= 8'd0;
-                verror_q <= 32'd0;
-                state_q <= ST_FETCH;
+                finish_region_commit();
               end else begin
-                commit_index_q <= 6'd0;
-                state_q <= ST_COMMIT;
+                preflight_index_q <= 6'd0;
+                state_q <= ST_PREFLIGHT;
               end
             end
             OP_VABT: begin
@@ -749,7 +1117,8 @@ module vv32_core #(
             end
 
             default: fault({16'd0, CAUSE_ILLEGAL_INSTRUCTION}, instruction_q);
-          endcase
+            endcase
+          end
         end
 
         ST_LOAD: begin
@@ -779,19 +1148,46 @@ module vv32_core #(
           if (dmem_ready_i) state_q <= ST_FETCH;
         end
 
+        ST_PREFLIGHT: begin
+          if ((sb_addr_q[preflight_index_q] + 32'd4 > DATA_MEMORY_BYTES) ||
+              is_device_range(sb_addr_q[preflight_index_q], sb_addr_q[preflight_index_q] + 32'd4)) begin
+            abort_region({16'd0, CAUSE_COMMIT_PROTOCOL});
+          end else if (preflight_index_q + 6'd1 >= sb_count_q) begin
+            commit_index_q <= 6'd0;
+            state_q <= ST_COMMIT;
+          end else begin
+            preflight_index_q <= preflight_index_q + 6'd1;
+          end
+        end
+
         ST_COMMIT: begin
           if (dmem_ready_i) begin
             if (commit_index_q + 6'd1 >= sb_count_q) begin
-              region_active_q <= 1'b0;
-              region_store_quota_q <= 5'd0;
-              region_budget_q <= 8'd0;
-              region_used_q <= 8'd0;
-              sb_count_q <= 6'd0;
-              commit_index_q <= 6'd0;
-              verror_q <= 32'd0;
-              state_q <= ST_FETCH;
+              finish_region_commit();
             end else begin
               commit_index_q <= commit_index_q + 6'd1;
+            end
+          end
+        end
+
+        ST_RELEASE: begin
+          if (cycle_q >= release_cycle_q) begin
+            if (release_abort_q) begin
+              verror_q <= release_error_q;
+              release_abort_q <= 1'b0;
+              release_error_q <= 32'd0;
+              if (release_interrupt_q) begin
+                release_interrupt_q <= 1'b0;
+                pc_q <= vtvec_q;
+              end else begin
+                pc_q <= region_fail_pc_q;
+              end
+              state_q <= ST_FETCH;
+            end else if (sb_count_q == 0) begin
+              finish_region_commit();
+            end else begin
+              preflight_index_q <= 6'd0;
+              state_q <= ST_PREFLIGHT;
             end
           end
         end
@@ -819,6 +1215,7 @@ module vv32_core #(
       cap_top_q[0] <= 32'd0;
       cap_perm_q[0] <= 5'd0;
       secret_q[0] <= 1'b0;
+      contract_token_tag_q[0] <= 32'd0;
     end
   end
 endmodule

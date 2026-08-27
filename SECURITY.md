@@ -1,7 +1,11 @@
 # Security Policy
 
-VICTORY-V is experimental architecture work. It is not suitable for production secrets, medical equipment, vehicle control, or other safety-critical use.
+VICTORY-V is experimental RTL and does not have a supported security release.
 
-Report implementation defects through a GitHub issue. Include the affected commit, the smallest reproducer, expected and observed behavior, and whether the problem crosses a capability, secret-flow, Victory Region, domain, or tag boundary.
+Please report reproducible issues privately when possible. Include the source revision, tool version, program or waveform, expected behavior, and observed behavior.
 
-There is no production deployment or security-support SLA. A passing test suite is useful evidence for covered cases, not certification of the ISA, RTL, toolchain, FPGA bitstream, side-channel behavior, or future Linux port.
+Current security-relevant boundaries include capability checks, `VLOCK`, both `VTRY` entry paths, Victory Region rollback, commit preflight, and VRTU range and permission faults. Privilege modes, DMA isolation, tagged context save/restore, secure boot, and physical side-channel claims are not complete.
+
+A post-publication fault is intentionally fatal. Once a write is externally visible, the core must not call the result a rollback.
+
+The archived Euclid experiment is not part of the default FPGA image.

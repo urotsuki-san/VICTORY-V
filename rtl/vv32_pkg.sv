@@ -55,6 +55,10 @@ package vv32_pkg;
   localparam logic [5:0] OP_VERR     = 6'h34;
   localparam logic [5:0] OP_WFI      = 6'h35;
 
+  localparam logic [5:0] OP_VPREP    = 6'h3c;
+  localparam logic [5:0] OP_VTRYC   = 6'h3d;
+  localparam logic [5:0] OP_VCANCEL  = 6'h3e;
+
   localparam logic [4:0] CAP_R = 5'h01;
   localparam logic [4:0] CAP_W = 5'h02;
   localparam logic [4:0] CAP_X = 5'h04;
@@ -71,6 +75,10 @@ package vv32_pkg;
   localparam logic [15:0] CSR_VERROR        = 16'h0007;
   localparam logic [15:0] CSR_VREGION_COUNT = 16'h0008;
   localparam logic [15:0] CSR_VREGION_LIMIT = 16'h0009;
+  localparam logic [15:0] CSR_VCAP_ALLOC    = 16'h000a;
+  localparam logic [15:0] CSR_VCONTRACT     = 16'h000b;
+  localparam logic [15:0] CSR_VRELEASE      = 16'h000c;
+  localparam logic [15:0] CSR_VREGION_CAPS  = 16'h000d;
 
   localparam logic [15:0] CAUSE_NONE                  = 16'd0;
   localparam logic [15:0] CAUSE_ILLEGAL_INSTRUCTION   = 16'd1;
@@ -89,6 +97,21 @@ package vv32_pkg;
   localparam logic [15:0] CAUSE_DATA_ALIGNMENT         = 16'd14;
   localparam logic [15:0] CAUSE_MEMORY_RANGE           = 16'd15;
   localparam logic [15:0] CAUSE_REGION_REQUIRED        = 16'd16;
+  localparam logic [15:0] CAUSE_REGION_REG_QUOTA       = 16'd17;
+  localparam logic [15:0] CAUSE_REGION_DEADLINE        = 16'd18;
+  localparam logic [15:0] CAUSE_REGION_PREEMPTED       = 16'd19;
+  localparam logic [15:0] CAUSE_VRTU_MISS              = 16'd20;
+  localparam logic [15:0] CAUSE_VRTU_PERMISSION        = 16'd21;
+  localparam logic [15:0] CAUSE_VRTU_CONFLICT          = 16'd22;
+  localparam logic [15:0] CAUSE_CAPABILITY_STALE       = 16'd23;
+  localparam logic [15:0] CAUSE_CONTRACT_TOKEN         = 16'd24;
+  localparam logic [15:0] CAUSE_CONTRACT_ADMISSION     = 16'd25;
+  localparam logic [15:0] CAUSE_REGION_ARENA           = 16'd26;
+  localparam logic [15:0] CAUSE_REGION_DEVICE          = 16'd27;
+  localparam logic [15:0] CAUSE_REGION_CAP_QUOTA       = 16'd28;
+  localparam logic [15:0] CAUSE_COMMIT_PROTOCOL        = 16'd29;
+  localparam logic [15:0] CAUSE_CAPABILITY_GENERATION_WRAP    = 16'd30;
+  localparam logic [15:0] CAUSE_VRTU_CONFIGURATION     = 16'd31;
 
   typedef enum logic [3:0] {
     ST_FETCH  = 4'd0,
@@ -97,6 +120,8 @@ package vv32_pkg;
     ST_STORE  = 4'd3,
     ST_COMMIT = 4'd4,
     ST_WFI    = 4'd5,
-    ST_HALT   = 4'd6
+    ST_HALT   = 4'd6,
+    ST_PREFLIGHT = 4'd7,
+    ST_RELEASE = 4'd8
   } vv32_state_t;
 endpackage

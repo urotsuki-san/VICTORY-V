@@ -1,6 +1,6 @@
 {
   "name": "VICTORY-V VV32-A0",
-  "version": "0.1.0-alpha.0",
+  "version": "0.7.0-alpha.0",
   "word_bits": 32,
   "byte_order": "little",
   "registers": 32,
@@ -299,7 +299,8 @@
       "value": 48,
       "mnemonic": "vtry",
       "format": "VTRY",
-      "description": "Start a bounded atomic Victory Region"
+      "description": "Enter a Victory Region with an inline store/instruction contract",
+      "variant": "inline"
     },
     "VCHK": {
       "value": 49,
@@ -330,6 +331,25 @@
       "mnemonic": "wfi",
       "format": "NONE",
       "description": "Wait for interrupt"
+    },
+    "VPREP": {
+      "value": 60,
+      "mnemonic": "vprep",
+      "format": "R",
+      "description": "Admit a one-shot Victory Contract"
+    },
+    "VTRYC": {
+      "value": 61,
+      "mnemonic": "vtry",
+      "format": "B",
+      "description": "Enter a Victory Region using a prepared one-shot contract",
+      "variant": "prepared"
+    },
+    "VCANCEL": {
+      "value": 62,
+      "mnemonic": "vcancel",
+      "format": "R",
+      "description": "Cancel an unused contract token"
     }
   },
   "capability_permissions": {
@@ -349,7 +369,11 @@
     "VINSTRET": 6,
     "VERROR": 7,
     "VREGION_COUNT": 8,
-    "VREGION_LIMIT": 9
+    "VREGION_LIMIT": 9,
+    "VCAP_ALLOC": 10,
+    "VCONTRACT": 11,
+    "VRELEASE": 12,
+    "VREGION_CAPS": 13
   },
   "causes": {
     "NONE": 0,
@@ -368,14 +392,31 @@
     "INTERRUPT": 13,
     "DATA_ALIGNMENT": 14,
     "MEMORY_RANGE": 15,
-    "REGION_REQUIRED": 16
+    "REGION_REQUIRED": 16,
+    "REGION_REG_QUOTA": 17,
+    "REGION_DEADLINE": 18,
+    "REGION_PREEMPTED": 19,
+    "VRTU_MISS": 20,
+    "VRTU_PERMISSION": 21,
+    "VRTU_CONFLICT": 22,
+    "CAPABILITY_STALE": 23,
+    "CONTRACT_TOKEN": 24,
+    "CONTRACT_ADMISSION": 25,
+    "REGION_ARENA": 26,
+    "REGION_DEVICE": 27,
+    "REGION_CAP_QUOTA": 28,
+    "COMMIT_PROTOCOL": 29,
+    "CAPABILITY_GENERATION_WRAP": 30,
+    "VRTU_CONFIGURATION": 31
   },
   "architectural_invariants": [
-    "r0 is always zero and never carries capability or secret metadata",
-    "integer-producing instructions clear the destination capability tag",
-    "all data-memory accesses require a valid capability",
-    "secret-tagged values cannot control branches or addresses",
-    "stores inside a Victory Region are invisible until VIC",
-    "VLOCK disables CROOT until reset"
+    "r0 is always zero, untagged, public, and not a contract token",
+    "data memory access requires a live capability with sufficient authority",
+    "capability derivation cannot widen bounds or permissions",
+    "secret data cannot directly control a branch, target, address, or public store",
+    "VPREP admits a one-shot resource contract before the prepared VTRY form changes architectural state",
+    "Victory Region abort restores integer, capability, secret, and token metadata",
+    "VIC publishes only after the complete write set passes preflight",
+    "VLOCK prevents further root creation until reset"
   ]
 }

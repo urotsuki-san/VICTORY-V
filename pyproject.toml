@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "victory-v"
-version = "0.4.0a0"
+version = "0.7.0a0"
 description = "Executable models, tools, and RTL for the experimental VICTORY-V processor family"
 readme = "README.md"
 requires-python = ">=3.11"

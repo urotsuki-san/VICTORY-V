@@ -53,6 +53,8 @@ module vv_dual_bringup #(
   logic [63:0] vv64_dmem_addr;
   logic [63:0] vv64_dmem_wdata;
   logic [7:0] vv64_dmem_wstrb;
+  logic vv64_dmem_probe;
+  logic [3:0] vv64_dmem_size;
   logic [63:0] vv64_dmem_rdata;
   logic vv64_dmem_ready;
   logic vv64_halted;
@@ -147,13 +149,19 @@ module vv_dual_bringup #(
     .imem_addr_o (vv64_imem_addr),
     .imem_rdata_i (vv64_imem_rdata),
     .imem_ready_i (vv64_imem_ready),
+    .imem_fault_i (1'b0),
+    .imem_fault_cause_i (16'd0),
     .dmem_req_o (vv64_dmem_req),
     .dmem_we_o (vv64_dmem_we),
     .dmem_addr_o (vv64_dmem_addr),
     .dmem_wdata_o (vv64_dmem_wdata),
     .dmem_wstrb_o (vv64_dmem_wstrb),
+    .dmem_probe_o (vv64_dmem_probe),
+    .dmem_size_o (vv64_dmem_size),
     .dmem_rdata_i (vv64_dmem_rdata),
     .dmem_ready_i (vv64_dmem_ready),
+    .dmem_fault_i (1'b0),
+    .dmem_fault_cause_i (16'd0),
     .irq_i (1'b0),
     .halted_o (vv64_halted),
     .debug_pc_o (vv64_debug_pc),
@@ -165,7 +173,7 @@ module vv_dual_bringup #(
   );
 
   assign vv32_ram_select = vv32_dmem_req && ({32'd0, vv32_dmem_addr} < RAM_LIMIT);
-  assign vv64_ram_select = vv64_dmem_req && (vv64_dmem_addr < RAM_LIMIT);
+  assign vv64_ram_select = vv64_dmem_req && !vv64_dmem_probe && (vv64_dmem_addr < RAM_LIMIT);
 
   vv_sram #(
     .DATA_WIDTH (32),
@@ -199,7 +207,7 @@ module vv_dual_bringup #(
 
   assign uart_req32 = vv32_dmem_req && vv32_dmem_we &&
                       ({32'd0, vv32_dmem_addr} == UART_TX) && (vv32_dmem_wstrb != 4'd0);
-  assign uart_req64 = vv64_dmem_req && vv64_dmem_we &&
+  assign uart_req64 = vv64_dmem_req && !vv64_dmem_probe && vv64_dmem_we &&
                       (vv64_dmem_addr == UART_TX) && (vv64_dmem_wstrb != 8'd0);
 
   always_comb begin
@@ -269,7 +277,7 @@ module vv_dual_bringup #(
   always_comb begin
     vv64_mmio_ready = 1'b0;
     vv64_mmio_rdata = 64'd0;
-    if (vv64_dmem_req && !vv64_ram_select) begin
+    if (vv64_dmem_req && !vv64_dmem_probe && !vv64_ram_select) begin
       case (vv64_dmem_addr)
         UART_TX: begin
           vv64_mmio_ready = vv64_dmem_we ? (uart_grant64 && uart_ready) : 1'b1;
@@ -300,7 +308,8 @@ module vv_dual_bringup #(
   end
 
   assign vv32_dmem_ready = vv32_ram_select ? vv32_ram_ready : vv32_mmio_ready;
-  assign vv64_dmem_ready = vv64_ram_select ? vv64_ram_ready : vv64_mmio_ready;
+  assign vv64_dmem_ready = vv64_dmem_probe ? 1'b1 :
+                              (vv64_ram_select ? vv64_ram_ready : vv64_mmio_ready);
   assign vv32_dmem_rdata = vv32_ram_select ? vv32_ram_rdata : vv32_mmio_rdata;
   assign vv64_dmem_rdata = vv64_ram_select ? vv64_ram_rdata : vv64_mmio_rdata;
 
@@ -350,7 +359,7 @@ module vv_dual_bringup #(
         endcase
       end
 
-      if (vv64_dmem_req && vv64_mmio_ready && vv64_dmem_we) begin
+      if (vv64_dmem_req && !vv64_dmem_probe && vv64_mmio_ready && vv64_dmem_we) begin
         case (vv64_dmem_addr)
           MAILBOX32: begin
             if (vv64_dmem_wstrb[0]) mailbox32_q[7:0] <= vv64_dmem_wdata[7:0];
@@ -405,4 +414,6 @@ module vv_dual_bringup #(
   assign debug_halted64_o = vv64_halted;
   assign debug_cause32_o = vv32_debug_cause;
   assign debug_cause64_o = vv64_debug_cause;
+
+  wire [3:0] unused_vv64_dmem_size = vv64_dmem_size;
 endmodule

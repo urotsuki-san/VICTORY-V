@@ -40,6 +40,8 @@ jobs:
         run: python tools/check_family_manifest.py
       - name: Verify FPGA files
         run: python tools/check_fpga_bringup.py
+      - name: Verify documentation state
+        run: python tools/check_docs_sync.py
       - name: Create build directory
         run: python -c "from pathlib import Path; Path('build').mkdir(exist_ok=True)"
       - name: Assemble and run examples
@@ -64,4 +66,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y iverilog
       - name: Compile and run self-checking testbenches
-        run: make rtl-test
+        run: timeout 120s make rtl-test
+
+  source-archive:
+    name: Source archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build source archive
+        shell: bash
+        run: git archive --format=zip --prefix="VICTORY-V-${GITHUB_SHA::8}/" --output=VICTORY-V-source.zip HEAD
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: VICTORY-V-source
+          path: VICTORY-V-source.zip
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

@@ -389,11 +389,40 @@ def _encode_line(line: ParsedLine, labels: dict[str, int], pc: int) -> list[int]
         _require_count(line, 2)
         return [encode_i(Opcode.CSRW, 0, _register(op[0], line), _csr(op[1], line))]
 
-    if mnemonic == "vtry":
+    if mnemonic == "vprep":
         _require_count(line, 3)
-        stores = _number(op[1], line)
-        budget = _number(op[2], line)
-        return [encode_vtry(stores, budget, _relative_offset(op[0], labels, pc, 13, line))]
+        return [
+            encode_r(
+                Opcode.VPREP,
+                _register(op[0], line),
+                _register(op[1], line),
+                _register(op[2], line),
+            )
+        ]
+
+    if mnemonic == "vcancel":
+        _require_count(line, 1)
+        return [encode_r(Opcode.VCANCEL, 0, _register(op[0], line))]
+
+    if mnemonic in {"vtry", "vtry.c"}:
+        if mnemonic == "vtry.c" or len(op) == 2:
+            _require_count(line, 2)
+            return [
+                encode_b(
+                    Opcode.VTRYC,
+                    _register(op[0], line),
+                    _relative_offset(op[1], labels, pc, 21, line),
+                )
+            ]
+        if len(op) == 3:
+            stores = _number(op[1], line)
+            budget = _number(op[2], line)
+            return [encode_vtry(stores, budget, _relative_offset(op[0], labels, pc, 13, line))]
+        raise AssemblyError(
+            "vtry expects either cToken, target or target, stores, budget",
+            line=line.line_number,
+            source=line.original,
+        )
 
     if mnemonic == "vchk":
         _require_count(line, 2)

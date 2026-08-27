@@ -94,6 +94,13 @@ def disassemble_word(word: int, *, pc: int = 0) -> str:
         return f"{op.name.lower()} {_r(insn.rd)}, {_c(insn.rs1)}, {sign_extend(insn.imm16, 16)}"
     if op == Opcode.VDECLASS:
         return f"vdeclass {_r(insn.rd)}, {_r(insn.rs1)}, {_c(insn.rs2)}"
+    if op == Opcode.VPREP:
+        return f"vprep {_c(insn.rd)}, {_c(insn.rs1)}, {_r(insn.rs2)}"
+    if op == Opcode.VTRYC:
+        target = (pc + 4 + insn.off21 * 4) & 0xFFFF_FFFF
+        return f"vtry {_c(insn.rs1)}, 0x{target:08x}"
+    if op == Opcode.VCANCEL:
+        return f"vcancel {_c(insn.rs1)}"
     if op == Opcode.VTRY:
         target = (pc + 4 + insn.off13 * 4) & 0xFFFF_FFFF
         return f"vtry 0x{target:08x}, {insn.stores}, {insn.budget}"

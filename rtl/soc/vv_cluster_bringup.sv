@@ -237,6 +237,7 @@ module vv_cluster_bringup #(
   ) u_vv64_p (
     .clk_i (clk_i),
     .rst_ni (p_rst_ni),
+    .user_mode_i (1'b0),
     .imem_req_o (p_imem_req),
     .imem_addr_o (p_imem_addr),
     .imem_rdata_i (p_imem_rdata),
@@ -266,6 +267,7 @@ module vv_cluster_bringup #(
   ) u_vv64_e (
     .clk_i (clk_i),
     .rst_ni (e_rst_ni),
+    .user_mode_i (1'b0),
     .imem_req_o (e_imem_req),
     .imem_addr_o (e_imem_addr),
     .imem_rdata_i (e_imem_rdata),

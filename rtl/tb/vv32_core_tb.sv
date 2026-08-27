@@ -175,6 +175,9 @@ module vv32_core_tb;
     if (debug_error !== 32'h0000_2222) begin
       $fatal(1, "unexpected Victory error: 0x%08x", debug_error);
     end
+    if (dut.regs_q[5] !== 32'd0 || dut.regs_q[6] !== 32'd0) begin
+      $fatal(1, "aborted VV32 register writes were not restored");
+    end
     if (dut.regs_q[7] !== 32'd2 || dut.regs_q[9] !== 32'd1 || dut.regs_q[11] !== 32'h0000_2222) begin
       $fatal(1, "architectural register check failed");
     end

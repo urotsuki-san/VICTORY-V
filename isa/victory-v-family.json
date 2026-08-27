@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "family": "VICTORY-V",
   "source_architecture": "VV32-A0",
   "instruction_width_bits": 32,
@@ -7,7 +7,8 @@
     "capability_checked_memory",
     "monotonic_authority",
     "secret_flow_tracking",
-    "bounded_victory_regions",
+    "declared_footprint",
+    "complete_region_rollback",
     "root_lock",
     "explicit_failure",
     "non_speculative_baseline"
@@ -19,45 +20,47 @@
       "address_bits": 32,
       "translation": "none",
       "inherits": null,
-      "hardware_target": "Tang Nano 20K",
+      "hardware_target": "Tang Nano 20K / Tang 138K",
       "required_rules": [
         "capability_checked_memory",
         "monotonic_authority",
         "secret_flow_tracking",
-        "bounded_victory_regions",
+        "declared_footprint",
+        "complete_region_rollback",
         "root_lock",
         "explicit_failure",
         "non_speculative_baseline"
       ]
     },
     "VV64-A0": {
-      "status": "design-draft",
+      "status": "rtl-alpha",
       "xlen": 64,
       "address_bits": 64,
-      "translation": "optional",
+      "translation": "range",
       "inherits": "VV32-A0",
-      "hardware_target": "Tang Console 138K",
+      "hardware_target": "Tang 138K",
       "required_rules": [
         "capability_checked_memory",
         "monotonic_authority",
         "secret_flow_tracking",
-        "bounded_victory_regions",
+        "declared_footprint",
+        "complete_region_rollback",
         "root_lock",
         "explicit_failure",
         "non_speculative_baseline",
-        "tagged_context",
-        "sealed_control_flow",
-        "capability_checked_atomics",
+        "generation_checked_capability_directory",
         "translation_cannot_add_authority",
-        "interrupt_abort_region"
+        "interrupt_abort_region",
+        "exact_range_translation"
       ]
     }
   },
   "system_profiles": {
     "VV64-L0-flat": {
       "architecture": "VV64-A0",
-      "status": "planned",
+      "status": "rtl-alpha",
       "mmu": false,
+      "protection": "VRTU flat range protection",
       "userspace_abi": "FDPIC-or-FLAT",
       "virtual_address_bits": null
     },
@@ -65,8 +68,33 @@
       "architecture": "VV64-A0",
       "status": "planned",
       "mmu": true,
+      "protection": "V39 page translation",
       "userspace_abi": "ELF",
       "virtual_address_bits": 39
+    }
+  },
+  "vrtu_profiles": {
+    "VRTU-P0": {
+      "entries": 4,
+      "address_bits": 17,
+      "software_refill": false,
+      "page_walker": false,
+      "locked_reset_map": true
+    },
+    "VRTU-E0": {
+      "entries": 2,
+      "address_bits": 17,
+      "software_refill": false,
+      "page_walker": false,
+      "locked_reset_map": true
+    }
+  },
+  "experiments": {
+    "EUCLID-experiment": {
+      "status": "experiment",
+      "path": "experiments/euclid",
+      "default_fpga_image": false,
+      "default_rtl_test": false
     }
   },
   "extension_pages": {

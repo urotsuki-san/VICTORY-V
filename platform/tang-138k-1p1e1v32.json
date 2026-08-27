@@ -1,16 +1,17 @@
 {
-  "schema": "victory-v.platform.v1",
-  "name": "Tang-138K-1P1E1V32",
-  "status": "rtl-bringup",
+  "schema": "victory-v.platform.v2",
+  "name": "Tang-138K-1P1E1V32-VRTU",
+  "status": "rtl-handoff",
   "clock_hz": 50000000,
   "cores": [
     {
       "id": 0,
       "architecture": "VV32-A0",
       "implementation": "control",
-      "role": "monitor-io",
+      "role": "budget-root-monitor-io",
       "private_ram_bytes": 65536,
-      "store_buffer_entries": 8
+      "store_buffer_entries": 8,
+      "vrtu_entries": 0
     },
     {
       "id": 1,
@@ -19,7 +20,8 @@
       "role": "linux-primary",
       "private_ram_bytes": 65536,
       "store_buffer_entries": 8,
-      "capability_directory_entries": 32
+      "capability_directory_entries": 32,
+      "vrtu_entries": 4
     },
     {
       "id": 2,
@@ -28,10 +30,51 @@
       "role": "linux-secondary",
       "private_ram_bytes": 65536,
       "store_buffer_entries": 2,
-      "capability_directory_entries": 8
+      "capability_directory_entries": 8,
+      "vrtu_entries": 2
     }
   ],
-  "boot_order": [0, 1, 2],
+  "boot_order": [
+    0,
+    1,
+    2
+  ],
+  "vrtu": {
+    "name": "Victory Range Translation Unit",
+    "mode": "exact-range-translation-and-protection",
+    "implemented_address_bits": 17,
+    "software_refill": false,
+    "page_table_walker": false,
+    "overlap_policy": "fault",
+    "causes": {
+      "miss": 20,
+      "permission": 21,
+      "conflict": 22
+    },
+    "reset_regions": [
+      {
+        "vbase": 0,
+        "vtop": 65536,
+        "pbase": 0,
+        "permissions": "rwxu",
+        "purpose": "private RAM and boot ROM"
+      },
+      {
+        "vbase": 65536,
+        "vtop": 131072,
+        "pbase": 65536,
+        "permissions": "rw-device-supervisor",
+        "purpose": "MMIO window"
+      }
+    ]
+  },
+  "board_status": {
+    "success_requires": [
+      "mailbox_vv32",
+      "mailbox_p",
+      "mailbox_e"
+    ]
+  },
   "memory": {
     "local_ram_end": 65536,
     "mmio_base": 65536,
@@ -55,6 +98,7 @@
   "linux_target": {
     "profile": "VV64-L0-flat",
     "mmu": false,
+    "memory_protection": "VRTU",
     "primary_core": 1,
     "secondary_core": 2,
     "control_core": 0,

@@ -4,73 +4,175 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
-OP = {
-    "MOVI": 0x02,
-    "LUI": 0x03,
-    "HALT": 0x18,
-    "CROOT": 0x20,
-    "CINC": 0x23,
-    "CSTB": 0x2B,
-    "CSTW": 0x2D,
-    "VLOCK": 0x2F,
-}
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
-BootImage = tuple[str, str, int, int]
+from victory_v import assemble  # noqa: E402
+from victory_v.disassembler import disassemble_word  # noqa: E402
+
+BootImage = tuple[str, str, int, int, bool]
 
 IMAGES: tuple[BootImage, ...] = (
-    ("vv32_bringup_rom", "VV32-A0 ready\r\n", 0x10, 0x32),
-    ("vv64_p_bringup_rom", "VV64-P0 ready\r\n", 0x18, 0x50),
-    ("vv64_e_bringup_rom", "VV64-E0 ready\r\n", 0x20, 0x45),
+    ("vv32_bringup_rom", "VV32-A0 VTRY ready\r\n", 0x10, 0x32, False),
+    ("vv64_p_bringup_rom", "VV64-P0 VTRY ready\r\n", 0x18, 0x50, True),
+    ("vv64_e_bringup_rom", "VV64-E0 VTRY ready\r\n", 0x20, 0x45, True),
 )
 
-LEGACY_IMAGE: BootImage = ("vv64_bringup_rom", "VV64-A0 ready\r\n", 0x18, 0x64)
+LEGACY_IMAGE: BootImage = (
+    "vv64_bringup_rom",
+    "VV64-A0 VTRY ready\r\n",
+    0x18,
+    0x64,
+    False,
+)
 
 
-def encode_r(op: str, rd: int, rs1: int, rs2: int, aux: int = 0) -> int:
-    return (OP[op] << 26) | (rd << 21) | (rs1 << 16) | (rs2 << 11) | (aux & 0x7FF)
+def emit_bytes(register: str, payload: bytes) -> list[str]:
+    lines: list[str] = []
+    for byte in payload:
+        lines.append(f"    movi r3, 0x{byte:02x}")
+        lines.append(f"    cstb r3, {register}, 0")
+    return lines
 
 
-def encode_i(op: str, rd: int, rs1: int, immediate: int) -> int:
-    return (OP[op] << 26) | (rd << 21) | (rs1 << 16) | (immediate & 0xFFFF)
+def source(image: BootImage) -> str:
+    _, message, mailbox_offset, marker, has_vrtu = image
+    direct_value = 0x1000 | marker
+    prepared_value = 0x2000 | marker
+    abort_value = 0x3000 | marker
 
+    lines = [
+        "    movi r1, 0",
+        "    lui r2, 2",
+        "    croot c10, r1, r2, rw",
+        "    vlock",
+        "    lui r4, 1",
+        "    cinc c11, c10, r4",
+        "",
+        "    movi r7, 0x100",
+        "    cinc c13, c10, r7",
+        "    movi r8, 16",
+        "    cbounds c13, c13, r8",
+        "",
+        f"    movi r6, 0x{direct_value:04x}",
+        "    vtry direct_fail, 1, 8",
+        "    cstw r6, c13, 0",
+        "    vic",
+        "    cldw r7, c13, 0",
+        f"    movi r8, 0x{direct_value:04x}",
+        "    cmpeq r9, r7, r8",
+        "    brz r9, direct_fail",
+        "",
+        "    movi r9, 0x4101",
+        "    vprep c14, c13, r9",
+        "    vtry c14, prepared_fail",
+        f"    movi r6, 0x{prepared_value:04x}",
+        "    cstw r6, c13, 4",
+        "    vic",
+        "    cldw r7, c13, 4",
+        f"    movi r8, 0x{prepared_value:04x}",
+        "    cmpeq r9, r7, r8",
+        "    brz r9, prepared_fail",
+        "",
+        f"    movi r6, 0x{abort_value:04x}",
+        "    vtry abort_check, 1, 8",
+        "    cstw r6, c13, 8",
+        "    vabt 0x7001",
+        "abort_check:",
+        "    cldw r7, c13, 8",
+        "    brnz r7, abort_fail",
+        "    verr r8",
+        "    movi r9, 0x7001",
+        "    cmpeq r9, r8, r9",
+        "    brz r9, abort_fail",
+        "",
+    ]
 
-def encode_none(op: str) -> int:
-    return OP[op] << 26
+    if has_vrtu:
+        lines.extend(
+            [
+                "    movi r6, 0x1234",
+                "    vtry device_check, 1, 8",
+                "    cstw r6, c11, 0",
+                "    vic",
+                "device_check:",
+                "    verr r8",
+                "    movi r9, 27",
+                "    cmpeq r9, r8, r9",
+                "    brz r9, device_fail",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "    movi r8, 0",
+            "    csrw r8, verror",
+            "    jmp selftest_ok",
+            "",
+            "direct_fail:",
+            "    movi r6, 0x31",
+            "    jmp selftest_fail",
+            "prepared_fail:",
+            "    movi r6, 0x32",
+            "    jmp selftest_fail",
+            "abort_fail:",
+            "    movi r6, 0x33",
+            "    jmp selftest_fail",
+        ]
+    )
+    if has_vrtu:
+        lines.extend(
+            [
+                "device_fail:",
+                "    movi r6, 0x34",
+                "    jmp selftest_fail",
+            ]
+        )
+
+    lines.extend(["", "selftest_fail:"])
+    lines.extend(emit_bytes("c11", b"VTRY FAIL "))
+    lines.extend(
+        [
+            "    cstb r6, c11, 0",
+            "    movi r3, 0x0d",
+            "    cstb r3, c11, 0",
+            "    movi r3, 0x0a",
+            "    cstb r3, c11, 0",
+            "    halt",
+            "",
+            "selftest_ok:",
+        ]
+    )
+    lines.extend(emit_bytes("c11", message.encode("ascii")))
+    lines.extend(
+        [
+            f"    movi r5, 0x{mailbox_offset:02x}",
+            "    cinc c12, c11, r5",
+            f"    movi r6, 0x{marker:02x}",
+            "    cstw r6, c12, 0",
+            "    movi r5, 0x28",
+            "    cinc c12, c11, r5",
+            f"    movi r6, 0x{marker:02x}",
+            "    cstw r6, c12, 0",
+            "    halt",
+        ]
+    )
+    return "\n".join(lines) + "\n"
 
 
 def program(image: BootImage) -> list[tuple[int, str]]:
-    _, message, mailbox_offset, marker = image
-    words: list[tuple[int, str]] = []
-
-    def emit(word: int, note: str) -> None:
-        words.append((word & 0xFFFF_FFFF, note))
-
-    emit(encode_i("MOVI", 1, 0, 0), "movi r1, 0")
-    emit(encode_i("LUI", 2, 0, 2), "lui r2, 2")
-    emit(encode_r("CROOT", 10, 1, 2, 3), "croot c10, r1, r2, rw")
-    emit(encode_none("VLOCK"), "vlock")
-    emit(encode_i("LUI", 4, 0, 1), "lui r4, 1")
-    emit(encode_r("CINC", 11, 10, 4), "cinc c11, c10, r4")
-
-    for byte in message.encode("ascii"):
-        emit(encode_i("MOVI", 3, 0, byte), f"movi r3, 0x{byte:02x}")
-        emit(encode_i("CSTB", 3, 11, 0), "cstb r3, c11, 0")
-
-    emit(encode_i("MOVI", 5, 0, mailbox_offset), f"movi r5, 0x{mailbox_offset:02x}")
-    emit(encode_r("CINC", 12, 11, 5), "cinc c12, c11, r5")
-    emit(encode_i("MOVI", 6, 0, marker), f"movi r6, 0x{marker:02x}")
-    emit(encode_i("CSTW", 6, 12, 0), "cstw r6, c12, 0")
-    emit(encode_i("MOVI", 5, 0, 0x28), "movi r5, 0x28")
-    emit(encode_r("CINC", 12, 11, 5), "cinc c12, c11, r5")
-    emit(encode_i("MOVI", 6, 0, marker), f"movi r6, 0x{marker:02x}")
-    emit(encode_i("CSTW", 6, 12, 0), "cstw r6, c12, 0")
-    emit(encode_none("HALT"), "halt")
-    return words
+    assembled = assemble(source(image))
+    return [
+        (word, disassemble_word(word, pc=index * 4))
+        for index, word in enumerate(assembled.words)
+    ]
 
 
 def render_module(image: BootImage) -> list[str]:
-    module_name, _, _, _ = image
+    module_name, _, _, _, _ = image
     lines = [
         f"module {module_name} (",
         "  input  logic [63:0] addr_i,",
@@ -91,7 +193,9 @@ def render_module(image: BootImage) -> list[str]:
 def render() -> str:
     lines = [
         "// Generated by tools/gen_fpga_bringup.py. Keep the script and this file together.",
-        "// UART transcript: VV32-A0 ready\\r\\n, VV64-P0 ready\\r\\n, VV64-E0 ready\\r\\n.",
+        "// Each core checks direct VTRY commit, prepared VTRY commit, and rollback before UART.",
+        "// VV64 also checks that a Region cannot publish to the VRTU DEVICE range.",
+        "// Success prints VTRY ready; failure prints VTRY FAIL plus the failed stage.",
         "`timescale 1ns/1ps",
         "",
     ]
@@ -103,8 +207,7 @@ def render() -> str:
 
 
 def main() -> None:
-    root = Path(__file__).resolve().parents[1]
-    output = root / "rtl" / "boot" / "vv_bringup_rom.sv"
+    output = ROOT / "rtl" / "boot" / "vv_bringup_rom.sv"
     output.write_text(render(), encoding="utf-8")
 
 

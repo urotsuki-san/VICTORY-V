@@ -36,6 +36,6 @@ module top (
     .debug_e_released_o ()
   );
 
-  // V13 is active low. It lights after all three boot mailboxes arrive.
+  // V13 is active low. All three CPU boot milestones must pass.
   assign led_V13 = ~(status_led[0] && status_led[1] && status_led[2]);
 endmodule

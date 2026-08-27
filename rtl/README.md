@@ -1,90 +1,71 @@
-# VICTORY-V RTL
+# RTL
 
-The RTL directory contains two architectures, two VV64 implementation profiles, and two bring-up SoCs.
+The default RTL tree contains three CPU cores and the small range unit used by the no-MMU-first Tang 138K image.
 
-## Cores
+```text
+VV32-A0             budget root / monitor
+VV64-A0/P0 + VRTU   main 64-bit core, four ranges
+VV64-A0/E0 + VRTU   smaller worker, two ranges
+```
 
-### `vv32_core.sv`
+## CPU cores
 
-`VV32-A0` is the compact core. It is single-issue, in-order, and multi-cycle. Capability metadata and Secret Tags live beside the register file. Victory Regions use a bounded store buffer.
+- `vv32_core.sv` — compact 32-bit control core.
+- `vv64_core.sv` — native 64-bit bring-up core.
+- `vv64_profiled_core.sv` — P0/E0 budgets plus VRTU integration.
+- `vv32_pkg.sv`, `vv64_pkg.sv` — opcodes, CSRs, states, and fault causes.
 
-VV32 remains part of the system. On the Tang 138K target it is the control core, not a discarded 64-bit prototype.
+Both widths checkpoint register and capability metadata at the `VTRY` boundary. Opcode `0x30` is `VTRY.I`, the inline form. `VPREP` followed by opcode `0x3d` is `VTRY.C`, the prepared form. The RTL symbol is `OP_VTRYC`; both encodings enter the same Region state.
 
-### `vv64_core.sv`
+Stores remain buffered until `VIC`. Repeated writes to one aligned granule merge. `ST_PREFLIGHT` checks the complete write set before `ST_COMMIT` emits the first store. Abort restores the entry state; a late publication fault is fatal because visible writes cannot honestly be called rolled back.
 
-The VV64 core is the current FPGA subset of `VV64-A0`. It keeps the VV32 primary opcode positions and widens registers, PC, CSRs, and the data port to 64 bits.
+## VRTU
 
-Implemented:
+`memory/vv_vrtu.sv` is the Victory Range Translation Unit. It has independent instruction and data paths, a small exact descriptor bank, and a generation-checked last-range guard on each path.
 
-- base integer and control instructions;
-- byte, halfword, word, and doubleword capability memory access;
-- a generation-checked Capability Directory;
-- Secret Tags;
-- `VLOCK`;
-- bounded Victory Regions with forwarding, commit, rollback, and secret scrub;
-- basic CSRs, traps, an interrupt input, and `WFI`.
+It has no page-table walker and no software refill. Zero matches report cause 20, missing permissions report 21, overlapping matches report 22, Region access to a device range reports 27, and malformed configuration reports 31.
 
-Still missing:
-
-- Monitor/Supervisor/User privilege;
-- tagged capability spill/fill;
-- atomics and fences;
-- sealed calls and protected returns;
-- `VTRYA`;
-- caches, DDR3, and page translation.
-
-Unsupported extension-page operations trap as illegal instructions.
-
-## P0 and E0
-
-`vv64_profiled_core.sv` wraps the same ISA core with two resource envelopes.
-
-| Profile | Capability Directory | Region store buffer |
-|---|---:|---:|
-| P0 | 32 | 8 |
-| E0 | 8 | 2 |
-
-This is the first implementation split. It is enough to instantiate and test 1P1E on the FPGA. The arithmetic pipeline and memory path are still shared. Later work may give P0 larger caches and faster arithmetic while E0 stays smaller.
+```bash
+make rtl-test-vrtu
+```
 
 ## SoCs
 
-### `soc/vv_dual_bringup.sv`
+- `soc/vv_dual_bringup.sv` — older VV32 + raw VV64 regression.
+- `soc/vv_cluster_bringup.sv` — current `VV32 + P0 + E0` image.
 
-The original VV32+VV64 image remains as a regression test.
+The cluster provides private RAM, UART, boot mailboxes, timebase, timer compares, and IPI bits. DDR3 and coherent shared memory are not connected.
 
-### `soc/vv_cluster_bringup.sv`
+## Tang 138K
 
-The current Tang 138K board image contains:
-
-```text
-VV32-A0 + VV64-P0 + VV64-E0
-```
-
-Each core has private BRAM. They share UART, mailboxes, a timebase, per-VV64 timer compares, software interrupt bits, and status LEDs. Boot order is VV32, P0, E0.
-
-Expected UART output:
+The four B/C Mega/Console projects instantiate `vv_cluster_bringup` and include `memory/vv_vrtu.sv`. The ROM runs both `VTRY` forms and rollback before the expected UART transcript:
 
 ```text
-VV32-A0 ready
-VV64-P0 ready
-VV64-E0 ready
+VV32-A0 VTRY ready
+VV64-P0 VTRY ready
+VV64-E0 VTRY ready
 ```
 
-This proves the three-core topology. It does not provide shared memory or SMP Linux yet.
+Gowin place-and-route and hardware validation are still required.
+
+## Archived experiment
+
+The former Euclid block is under `experiments/euclid/` and is not part of the default bitstream or `make rtl-test`.
+
+```bash
+make experiment-euclid
+```
 
 ## Tests
 
 ```bash
 make rtl-test-vv32
 make rtl-test-vv64
+make rtl-test-contract-vv32
+make rtl-test-contract-vv64
+make rtl-test-region-irq
+make rtl-test-vrtu
 make rtl-test-dual
 make rtl-test-cluster
-```
-
-Run all RTL tests with:
-
-```bash
 make rtl-test
 ```
-
-Board projects and constraints are under `fpga/tang-138k/`.
